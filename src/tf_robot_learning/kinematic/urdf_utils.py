@@ -85,7 +85,6 @@ def urdf_link_to_tk_link(lnk):
 
 
 def tk_tree_from_urdf_model(urdf):
-    raise NotImplementedError
     root = urdf.get_root()
     tree = kdl.Tree(root)
 
@@ -96,12 +95,13 @@ def tk_tree_from_urdf_model(urdf):
                     if child_name == link.name:
                         for jidx, jnt in enumerate(urdf.joints):
                             if jnt.name == joint:
-                                tk_jnt, tk_origin = urdf_joint_to_tk_joint(
-                                    urdf.joints[jidx])
+                                tk_jnt, tk_origin = urdf_joint_to_tk_joint(urdf.joints[jidx])
                                 tk_origin = urdf_pose_to_tk_frame(urdf.joints[jidx].origin)
 
-                                tree.segments += [Segment(joint=tk_jnt, f_tip=tk_origin, child_name=child_name)]
-
+                                # kdl_sgm = kdl.Segment(name=,
+                                #             joint=tk_jnt,
+                                #             f_tip=tk_origin,
+                                #             child_name=child_name)
                                 tree.addSegment(kdl_sgm, parent)
                                 add_children_to_tree(child_name)
 
@@ -120,9 +120,6 @@ def kdl_chain_from_urdf_model(urdf, root=None, tip=None,
 
     def add_children_to_chain(parent, segments, chain=None):
         if parent in urdf.child_map:
-            # print "parent:", parent
-            # print "childs:", urdf.child_map[parent]
-            #
             if chain is not None:
                 childs = [child for child in urdf.child_map[parent] if child[1] in chain]
                 if len(childs):
@@ -134,11 +131,6 @@ def kdl_chain_from_urdf_model(urdf, root=None, tip=None,
                     print("Robot is not a chain, taking first branch")
 
                 joint, child_name = urdf.child_map[parent][0]
-
-            # print "child name:", child_name
-            # for lidx, link in enumerate(urdf.links):
-            # 	if child_name == link.name:
-            # 		child = urdf.links[lidx]
 
             for jidx, jnt in enumerate(urdf.joints):
                 if jnt.name == joint and jnt.joint_type in ['revolute', 'fixed', 'prismatic']:
@@ -152,8 +144,6 @@ def kdl_chain_from_urdf_model(urdf, root=None, tip=None,
                         filename = mesh_path + \
                                    urdf.link_map[child_name].collision.geometry.filename.split('/')[-1]
 
-                        # filename = filename[:-14] + '.STL'
-                        # tk_lnk.collision_mesh = mesh.Mesh.from_file(filename)
                         tk_lnk.collision_mesh = trimesh.load(filename)
 
                     segments += [Segment(joint=tk_jnt, f_tip=tk_origin, child_name=child_name, link=tk_lnk)]
