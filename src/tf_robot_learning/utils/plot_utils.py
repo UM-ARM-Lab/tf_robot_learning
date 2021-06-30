@@ -21,8 +21,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 
-plt.style.use('ggplot')
-
 
 class DensityPlotter(object):
     def __init__(self, f, nb_sub=20, np=False, vectorized=True):

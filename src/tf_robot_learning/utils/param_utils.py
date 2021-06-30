@@ -19,7 +19,7 @@
 
 import tensorflow as tf
 
-from .tf_utils import log_normalize
+from tf_robot_learning.utils.tf_utils import log_normalize
 
 
 def has_parent_variable(tensor, variable):

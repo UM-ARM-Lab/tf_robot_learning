@@ -20,7 +20,7 @@
 import numpy as np
 import tensorflow as tf
 
-from .tf_utils import block_diagonal
+from tf_robot_learning.utils.tf_utils import block_diagonal
 
 
 def build_fixed_psi(n_step, n_dim, n_state, scale=None, dtype=tf.float32):
