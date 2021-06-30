@@ -17,11 +17,8 @@
 # You should have received a copy of the GNU General Public License
 # along with tf_robot_learning. If not, see <http://www.gnu.org/licenses/>.
 
-import tensorflow as tf
-import tensorflow.compat.v1 as tf1
 from .utils.tf_utils import *
 from .utils import FkLayout
-from tensorflow.python.framework.ops import EagerTensor
 
 class Rotation(tf.Tensor):
 	pass

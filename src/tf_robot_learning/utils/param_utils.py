@@ -153,7 +153,7 @@ def make_cov(k, scale=1., param='expm', batch_shape=(), is_prec=False, var=None)
 	:param is_prec:	if True return a precision matrix whose std is scale
 	:return:
 	"""
-	if isinstance(scale, float) and param is not 'iso':
+	if isinstance(scale, float) and param != 'iso':
 		scale = scale * tf.ones(k)
 	elif isinstance(scale, list):
 		scale = tf.convert_to_tensor(scale)
