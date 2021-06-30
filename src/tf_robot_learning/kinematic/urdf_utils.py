@@ -20,12 +20,12 @@
 import numpy as np
 import tensorflow as tf
 
-from .chain import Chain
-from .frame import Frame
-from .joint import JointType, Joint, Link
-from .segment import Segment
-from .utils.import_pykdl import *
-from .utils.urdf_parser_py.urdf import URDF
+from tf_robot_learning.kinematic.chain import Chain
+from tf_robot_learning.kinematic.frame import Frame
+from tf_robot_learning.kinematic.joint import JointType, Joint, Link
+from tf_robot_learning.kinematic.segment import Segment
+from tf_robot_learning.kinematic.utils.import_pykdl import *
+from tf_robot_learning.kinematic.utils.urdf_parser_py.urdf import URDF
 
 
 def euler_to_quat(r, p, y):

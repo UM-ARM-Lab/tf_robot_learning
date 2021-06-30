@@ -24,10 +24,10 @@ import numpy as np
 import tensorflow as tf
 from tensorflow_probability import distributions as ds
 
-from .frame import Frame
-from .joint import JointType
-from .utils import FkLayout
-from .utils.plot_utils import axis_equal_3d
+from tf_robot_learning.kinematic.frame import Frame
+from tf_robot_learning.kinematic.joint import JointType
+from tf_robot_learning.kinematic.utils import FkLayout
+from tf_robot_learning.kinematic.utils.plot_utils import axis_equal_3d
 
 
 def stack_batch(vecs):

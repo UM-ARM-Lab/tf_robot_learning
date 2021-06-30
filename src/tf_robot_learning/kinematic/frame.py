@@ -17,8 +17,8 @@
 # You should have received a copy of the GNU General Public License
 # along with tf_robot_learning. If not, see <http://www.gnu.org/licenses/>.
 
-from .utils import FkLayout
-from .utils.tf_utils import *
+from tf_robot_learning.utils import FkLayout
+from tf_robot_learning.utils.tf_utils import *
 
 
 class Rotation(tf.Tensor):

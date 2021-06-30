@@ -21,8 +21,8 @@ from enum import IntEnum
 
 import numpy as np
 
-from .frame import Frame, Twist
-from .rotation import *
+from tf_robot_learning.kinematic.frame import Frame, Twist
+from tf_robot_learning.kinematic.rotation import *
 
 
 class JointType(IntEnum):
