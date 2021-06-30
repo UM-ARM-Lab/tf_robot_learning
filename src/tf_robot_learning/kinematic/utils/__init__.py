@@ -17,8 +17,8 @@
 # You should have received a copy of the GNU General Public License
 # along with tf_robot_learning. If not, see <http://www.gnu.org/licenses/>.
 
-from .tf_utils import *
-from .pykdl_utils import forward_kinematic, FKSolver
-from . plot_utils import plot_robot
 from . import import_pykdl
 from .layout import FkLayout
+from .plot_utils import plot_robot
+from .pykdl_utils import forward_kinematic, FKSolver
+from .tf_utils import *

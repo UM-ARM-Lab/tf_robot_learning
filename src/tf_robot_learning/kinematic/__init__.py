@@ -17,10 +17,10 @@
 # You should have received a copy of the GNU General Public License
 # along with tf_robot_learning. If not, see <http://www.gnu.org/licenses/>.
 
+from . import rotation
+from . import utils
+from .chain import Chain, FkLayout, ChainDict
 from .frame import Frame, Twist
 from .joint import Joint, JointType
 from .segment import Segment
-from .chain import Chain, FkLayout, ChainDict
-from . import rotation
 from .urdf_utils import *
-from . import utils

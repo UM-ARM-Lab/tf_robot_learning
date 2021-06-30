@@ -17,6 +17,6 @@
 # You should have received a copy of the GNU General Public License
 # along with tf_robot_learning. If not, see <http://www.gnu.org/licenses/>.
 
-from . import utils
 from . import lqr
 from . import rollout
+from . import utils

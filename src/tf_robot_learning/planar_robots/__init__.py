@@ -17,8 +17,8 @@
 # You should have received a copy of the GNU General Public License
 # along with tf_robot_learning. If not, see <http://www.gnu.org/licenses/>.
 
-from .robot import Robot
-from .two_joint import TwoJointRobot
-from .three_joint import ThreeJointRobot
-from .n_joint import NJointRobot
 from .bimanual_robot import BimanualThreeJointRobot
+from .n_joint import NJointRobot
+from .robot import Robot
+from .three_joint import ThreeJointRobot
+from .two_joint import TwoJointRobot

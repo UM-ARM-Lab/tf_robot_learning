@@ -17,9 +17,9 @@
 # You should have received a copy of the GNU General Public License
 # along with tf_robot_learning. If not, see <http://www.gnu.org/licenses/>.
 
-from . import tf_utils as tf
-from . import plot_utils as plot
 from . import basis_utils as basis
-from . import param_utils as param
 from . import data_utils as data
 from . import img_utils as img
+from . import param_utils as param
+from . import plot_utils as plot
+from . import tf_utils as tf

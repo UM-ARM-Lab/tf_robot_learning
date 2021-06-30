@@ -19,7 +19,9 @@
 
 import numpy as np
 import tensorflow as tf
+
 from ..utils.basis_utils import build_fixed_psi
+
 
 def get_canonical(nb_dim, nb_deriv=2, dt=0.01, return_op=True, mass=1.):
     A1d = np.zeros((nb_deriv, nb_deriv))
@@ -37,13 +39,14 @@ def get_canonical(nb_dim, nb_deriv=2, dt=0.01, return_op=True, mass=1.):
     if nb_deriv == 2:
         B1d /= mass
 
-    A, B = tf.constant(np.kron(A1d, np.eye(nb_dim)), dtype=tf.float32),\
-		   tf.constant(np.kron(B1d, np.eye(nb_dim)), dtype=tf.float32)
+    A, B = tf.constant(np.kron(A1d, np.eye(nb_dim)), dtype=tf.float32), \
+           tf.constant(np.kron(B1d, np.eye(nb_dim)), dtype=tf.float32)
 
     if return_op:
         return tf.linalg.LinearOperatorFullMatrix(A), tf.linalg.LinearOperatorFullMatrix(B)
     else:
         return A, B
+
 
 def get_perturbation_seq(ndim=1, p_pert=0.01, pert_range=0.1, batch_size=10, horizon=100):
     p_push_prior = tf.concat([
@@ -57,11 +60,12 @@ def get_perturbation_seq(ndim=1, p_pert=0.01, pert_range=0.1, batch_size=10, hor
 
     return push_seq
 
+
 def get_push_seq(length=10, ndim=1, p_pert=0.01, pert_range=0.1, batch_size=10, horizon=100):
     k_basis = int(horizon / length * 2)
 
     _, h = build_fixed_psi(n_step=horizon, n_dim=ndim, n_state=k_basis,
-                                          scale=.3 / k_basis)
+                           scale=.3 / k_basis)
     pert_seq = get_perturbation_seq(
         ndim=ndim, p_pert=p_pert, pert_range=pert_range, batch_size=batch_size, horizon=k_basis)
 

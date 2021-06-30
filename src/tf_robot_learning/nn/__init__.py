@@ -17,6 +17,6 @@
 # You should have received a copy of the GNU General Public License
 # along with tf_robot_learning. If not, see <http://www.gnu.org/licenses/>.
 
-from . mlp import MLP
-from . density_mlp import DensityMLP
-from . inv_net import real_nvp
+from .density_mlp import DensityMLP
+from .inv_net import real_nvp
+from .mlp import MLP

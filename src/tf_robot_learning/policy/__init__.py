@@ -17,5 +17,5 @@
 # You should have received a copy of the GNU General Public License
 # along with tf_robot_learning. If not, see <http://www.gnu.org/licenses/>.
 
-from .policy import NNStochasticFeedbackPolicy, NNStochasticPolicy, Policy
 from .poe_policy import PoEPolicy, AccLQRPoEPolicy, ForcePoEPolicy, VelocityPoEPolicy, AccPoEPolicy
+from .policy import NNStochasticFeedbackPolicy, NNStochasticPolicy, Policy

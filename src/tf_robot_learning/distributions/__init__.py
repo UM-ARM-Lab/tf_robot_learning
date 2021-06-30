@@ -19,22 +19,20 @@
 
 from tensorflow_probability import distributions as _distributions
 
-from .poe import PoE
-
-from .mvn import MultivariateNormalFullCovarianceML, MultivariateNormalFullPrecision, \
-	MultivariateNormalIso, MultivariateNormalFullCovariance
-from .soft_uniform import SoftUniformNormalCdf, SoftUniform
 # import from tensorflow_probability
 from . import approx
-from .promp import ProMP, build_fixed_psi
+from .mvn import MultivariateNormalFullCovarianceML, MultivariateNormalFullPrecision, \
+	MultivariateNormalIso, MultivariateNormalFullCovariance
+from .poe import PoE
+from .soft_uniform import SoftUniformNormalCdf, SoftUniform
 
 Categorical = _distributions.Categorical
 MultivariateNormalDiag = _distributions.MultivariateNormalDiag
 MultivariateNormalTriL = _distributions.MultivariateNormalTriL
 try:
-	Wishart = _distributions.Wishart
+    Wishart = _distributions.Wishart
 except:
-	Wishart = None
+    Wishart = None
 LogNormal = _distributions.LogNormal
 StudentT = _distributions.StudentT
 Normal = _distributions.Normal

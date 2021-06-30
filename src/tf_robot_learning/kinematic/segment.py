@@ -17,38 +17,36 @@
 # You should have received a copy of the GNU General Public License
 # along with tf_robot_learning. If not, see <http://www.gnu.org/licenses/>.
 
-from .frame import Frame
-from .joint import Joint
 from .utils import *
 
+
 class Segment(object):
-	def __init__(self, joint, f_tip, child_name='', link=None, fixed=True):
-		"""
-		Segment of a kinematic chain
+    def __init__(self, joint, f_tip, child_name='', link=None, fixed=True):
+        """
+        Segment of a kinematic chain
 
-		:param joint:
-		:type joint: tk.Joint
-		:param f_tip:
-		:type f_tip: tk.Frame
-		"""
-		self.joint = joint
-		self.f_tip = joint.pose(0.).inv() *  f_tip
+        :param joint:
+        :type joint: tk.Joint
+        :param f_tip:
+        :type f_tip: tk.Frame
+        """
+        self.joint = joint
+        self.f_tip = joint.pose(0.).inv() * f_tip
 
-		if fixed:
-			self.f_tip = self.f_tip.fix_it()
+        if fixed:
+            self.f_tip = self.f_tip.fix_it()
 
-		# print (self.f_tip)
-		# print (self.f_tip.fix_it())
-		self.child_name = child_name
+        # print (self.f_tip)
+        # print (self.f_tip.fix_it())
+        self.child_name = child_name
 
-		self.link = link
+        self.link = link
 
-		self.pose_0 = self.pose(0.).fix_it()
+        self.pose_0 = self.pose(0.).fix_it()
 
-	def pose(self, q):
-		return self.joint.pose(q) * self.f_tip
+    def pose(self, q):
+        return self.joint.pose(q) * self.f_tip
 
-	def twist(self, q, qdot=0.):
-		return self.joint.twist(qdot).ref_point(
-			matvecmul(self.joint.pose(q).m, self.f_tip.p))
-
+    def twist(self, q, qdot=0.):
+        return self.joint.twist(qdot).ref_point(
+            matvecmul(self.joint.pose(q).m, self.f_tip.p))

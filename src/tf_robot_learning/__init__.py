@@ -18,14 +18,13 @@
 # along with tf_robot_learning. If not, see <http://www.gnu.org/licenses/>.
 
 from . import control
-from . import kinematic
 from . import distributions
+from . import kinematic
+from . import nn
+from . import planar_robots
+from . import policy
 from . import utils
 from .utils import param as p
-from . import planar_robots
-from . import nn
-from . import policy
-
 from .utils import tf_utils as tf
 
 datapath = __path__[0][:-17] + 'data'
