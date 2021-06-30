@@ -33,9 +33,10 @@ class JointType(IntEnum):
     NoneT = 4
 
 
-class Joint(object):
+class Joint:
     def __init__(self, type, origin=None, axis=None, name='', limits=None):
         self.type = type
+        self.name = name
 
         if limits is not None:
             self.limits = {'up':  limits.upper, 'low': limits.lower,
@@ -46,7 +47,7 @@ class Joint(object):
         self.axis = axis
         self.origin = origin
 
-        self.pose_0 = self.pose(0.).fix_it()
+        self.pose_0 = self.pose(0.)
 
     def pose(self, a):
         # TODO implement origin
@@ -75,7 +76,7 @@ class Joint(object):
             return Twist()
 
 
-class Mesh(object):
+class Mesh:
     def __init__(self, mesh, dtype=tf.float32):
         self._vertices = tf.convert_to_tensor(mesh.vertices, dtype=dtype)
         self._nb_vertices = mesh.vertices.shape[0]
@@ -115,7 +116,7 @@ class Mesh(object):
                          tf.random_uniform((size,), 0, self._nb_vertices - 1, dtype=tf.int64))
 
 
-class Link(object):
+class Link:
     def __init__(self, frame, mass=1.0):
         self.mass = mass
         self.frame = frame

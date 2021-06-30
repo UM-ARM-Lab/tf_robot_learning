@@ -100,8 +100,7 @@ def tk_tree_from_urdf_model(urdf):
                                     urdf.joints[jidx])
                                 tk_origin = urdf_pose_to_tk_frame(urdf.joints[jidx].origin)
 
-                                tree.segments += [Segment(joint=tk_jnt, f_tip=tk_origin,
-                                                          child_name=child_name)]
+                                tree.segments += [Segment(joint=tk_jnt, f_tip=tk_origin, child_name=child_name)]
 
                                 tree.addSegment(kdl_sgm, parent)
                                 add_children_to_tree(child_name)
@@ -157,9 +156,7 @@ def kdl_chain_from_urdf_model(urdf, root=None, tip=None,
                         # tk_lnk.collision_mesh = mesh.Mesh.from_file(filename)
                         tk_lnk.collision_mesh = trimesh.load(filename)
 
-                    segments += [Segment(
-                        joint=tk_jnt, f_tip=tk_origin, child_name=child_name, link=tk_lnk
-                    )]
+                    segments += [Segment(joint=tk_jnt, f_tip=tk_origin, child_name=child_name, link=tk_lnk)]
 
                     add_children_to_chain(child_name, segments, chain)
 

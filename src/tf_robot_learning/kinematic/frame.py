@@ -17,8 +17,11 @@
 # You should have received a copy of the GNU General Public License
 # along with tf_robot_learning. If not, see <http://www.gnu.org/licenses/>.
 
-from tf_robot_learning.utils import FkLayout
-from tf_robot_learning.utils.tf_utils import *
+import tensorflow as tf
+
+from tf_robot_learning.kinematic.utils.layout import FkLayout
+from tf_robot_learning.kinematic.utils.tf_utils import angular_vel_tensor, matmatmul, matvecmul
+import transformations
 
 
 class Rotation(tf.Tensor):
@@ -83,13 +86,13 @@ class Twist(object):
     def ref_point(self, v):
         if v.shape.ndims > self.rot.shape.ndims:
             rot = self.rot[None] * (tf.zeros_like(v) + 1.)
-            vel = self.vel + tf1.cross(rot, v)
+            vel = self.vel + tf.linalg.cross(rot, v)
         elif v.shape.ndims < self.rot.shape.ndims:
             n = self.rot.shape[0].value
-            vel = self.vel + tf1.cross(self.rot, v[None] * tf.ones((n, 1)))
+            vel = self.vel + tf.linalg.cross(self.rot, v[None] * tf.ones((n, 1)))
             rot = self.rot
         else:
-            vel = self.vel + tf1.cross(self.rot, v)
+            vel = self.vel + tf.linalg.cross(self.rot, v)
             rot = self.rot
 
         if self.is_batch or v.shape.ndims == 2:
@@ -135,14 +138,6 @@ class Frame(object):
         self.p = p
         self.m = _m
 
-    def fix_it(self):
-        # return self
-        sess = tf.compat.v1.get_default_session()
-
-        p, m = sess.run([self.p, self.m])
-
-        return Frame(tf.convert_to_tensor(p, tf.float32), tf.convert_to_tensor(m, tf.float32))
-
     @property
     def is_batch(self):
         return self.m.shape.ndims == 3
@@ -177,7 +172,14 @@ class Frame(object):
         Position and Quaternion
         :return:
         """
-        raise NotImplementedError
+        raise NotImplementedError()
+        if self.is_batch:
+            m34 = tf.concat([self.m, tf.zeros([3, 1], dtype=self.m.dtype)], axis=1)
+            m44 = tf.concat([m34, tf.constant([[0, 0, 0, 1]], dtype=self.m.dtype)], axis=0)
+            q = transformations.quaternion_from_matrix(m44)  # wxyz
+            return tf.concat([self.p, tf.reshape(tf.transpose(self.m, perm=(0, 2, 1)), [-1, 9])], axis=1)
+        else:
+            return tf.concat([self.p, tf.reshape(tf.transpose(self.m, perm=(1, 0)), [9])], axis=0)
 
     def inv(self):
         return Frame(p=-tf.matmul(self.m, tf.expand_dims(self.p, 1), transpose_a=True)[:, 0],
@@ -187,7 +189,7 @@ class Frame(object):
         if isinstance(other, Twist):
             # TODO check
             rot = matvecmul(self.m, other.rot)
-            vel = matvecmul(self.m, other.vel) + tf1.cross(self.p, rot)  # should be cross product
+            vel = matvecmul(self.m, other.vel) + tf.linalg.cross(self.p, rot)  # should be cross product
             return Twist(tf.concat([vel, rot], 0))
 
         elif isinstance(other, tf.Tensor) or isinstance(other, tf.Variable):

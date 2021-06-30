@@ -26,7 +26,7 @@ from tensorflow_probability import distributions as ds
 
 from tf_robot_learning.kinematic.frame import Frame
 from tf_robot_learning.kinematic.joint import JointType
-from tf_robot_learning.kinematic.utils import FkLayout
+from tf_robot_learning.kinematic.utils.layout import FkLayout
 from tf_robot_learning.kinematic.utils.plot_utils import axis_equal_3d
 
 
@@ -95,6 +95,8 @@ class Chain(object):
         self._mean_pose = None
         self._masses = None
         self._mass = None
+        self._names = None
+        self._nb_joints = None
 
     @property
     def joint_limits(self):
@@ -434,6 +436,14 @@ class Chain(object):
             return tf.transpose(stack_batch([_t.dx for _t in jac]), (0, 2, 1))[:, :3]
         else:
             raise NotImplementedError
+
+    def actuated_joint_names(self):
+        if self._names is None or self._names is None:
+            self._names = [seg.joint.name for seg in self.segments if seg.joint.type != JointType.NoneT]
+
+            self._nb_joints = len(self._names)
+
+        return self._names
 
 
 class ChainDict(OrderedDict, Chain):
