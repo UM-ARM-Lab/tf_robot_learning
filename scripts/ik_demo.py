@@ -5,6 +5,7 @@ from math import pi
 import tensorflow as tf
 from tensorflow_graphics.geometry.transformation import quaternion as tfq
 from tensorflow_graphics.geometry.transformation import rotation_matrix_3d as tfr
+from tqdm import trange
 
 import rospy
 import urdf_parser_py.xml_reflection.core
@@ -69,7 +70,7 @@ def quaternion_from_matrix(m):
     return tf.stack(qs, 0)
 
 
-# @tf.function
+@tf.function
 def pose_loss(chain, q, target_pose, theta=0.9):
     xs = chain.xs(q, layout=FkLayout.xm)
     position = xs[-1, :3]
@@ -125,10 +126,10 @@ def main():
     q = tf.Variable([0.0] * n_joints, dtype=tf.float32)
     variables = [q]
 
-    debug = False
+    debug_viz = False
     theta = 0.99
 
-    while True:
+    for i in trange(1000):
         def _step():
             with tf.GradientTape(persistent=True) as tape:
                 left_q = tf.gather(q, left_joint_indices)
@@ -139,7 +140,7 @@ def main():
                 right_loss = theta * right_pos_error + (1 - theta) * right_rot_error
                 loss = tf.reduce_mean(left_loss + right_loss)
 
-            if debug:
+            if debug_viz:
                 print(tf.linalg.norm(tape.gradient(left_pos_error, variables)[0].values).numpy(),
                       tf.linalg.norm(tape.gradient(left_rot_error, variables)[0].values).numpy(),
                       tf.linalg.norm(tape.gradient(right_pos_error, variables)[0].values).numpy(),
@@ -198,7 +199,7 @@ def main():
 
             pub2.publish(msg)
 
-        if debug:
+        if debug_viz:
             _viz()
 
 
