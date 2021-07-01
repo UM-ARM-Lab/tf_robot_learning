@@ -11,6 +11,7 @@ import urdf_parser_py.xml_reflection.core
 from arc_utilities.ros_helpers import get_connected_publisher
 from arc_utilities.tf2wrapper import TF2Wrapper
 from geometry_msgs.msg import Point
+from moonshine.simple_profiler import SimpleProfiler
 from moveit_msgs.msg import DisplayRobotState
 from sensor_msgs.msg import JointState
 from tf.transformations import quaternion_from_euler
@@ -56,6 +57,18 @@ def compute_pose_loss(chain, q, target_pose):
     return xs, position_error, _orientation_error
 
 
+@tf.function
+def compute_jl_loss(chain: Chain, q):
+    joint_limits = chain.joint_limits
+    jl_low = joint_limits[:, 0][tf.newaxis]
+    jl_high = joint_limits[:, 1][tf.newaxis]
+    low_error = tf.math.maximum(jl_low - q, 0)
+    high_error = tf.math.maximum(q - jl_high, 0)
+    jl_errors = tf.math.maximum(low_error, high_error)
+    jl_loss = tf.reduce_sum(jl_errors, axis=-1)
+    return jl_loss
+
+
 def target(x, y, z, roll, pitch, yaw):
     return tf.cast(tf.expand_dims(tf.concat([[x, y, z], quaternion_from_euler(roll, pitch, yaw)], 0), 0), tf.float32)
 
@@ -76,6 +89,7 @@ class HdtIK:
         self.theta = 0.99
         self.jl_alpha = 1.0
         self.initial_lr = 0.01
+        self.loss_threshold = 1e-4
 
         # lr = tf.keras.optimizers.schedules.ExponentialDecay(0.5, 20, 0.9)
         # opt = tf.keras.optimizers.SGD(lr)
@@ -90,12 +104,12 @@ class HdtIK:
         if initial_value is None:
             batch_size = left_target_pose.shape[0]
             initial_value = tf.zeros([batch_size, self.n_joints], dtype=tf.float32)
-        q = tf.Variable(initial_value)
+        q = tf.Variable(tf.identity(initial_value))
 
         converged = False
         for _ in trange(5000):
             loss, gradients, viz_info = self.opt(q, left_target_pose, right_target_pose)
-            if loss < 5e-5:
+            if loss < self.loss_threshold:
                 converged = True
                 break
 
@@ -125,14 +139,7 @@ class HdtIK:
         return loss, viz_info
 
     def compute_jl_loss(self, chain: Chain, q):
-        joint_limits = chain.joint_limits
-        jl_low = joint_limits[:, 0][tf.newaxis]
-        jl_high = joint_limits[:, 1][tf.newaxis]
-        low_error = tf.math.maximum(jl_low - q, 0)
-        high_error = tf.math.maximum(q - jl_high, 0)
-        jl_errors = tf.math.maximum(low_error, high_error)
-        jl_loss = tf.reduce_sum(jl_errors, axis=-1)
-        return self.jl_alpha * jl_loss
+        return self.jl_alpha * compute_jl_loss(chain, q)
 
     def compute_pose_loss(self, chain: Chain, q, target_pose):
         xs, pos_error, rot_error = compute_pose_loss(chain, q, target_pose)
@@ -141,7 +148,7 @@ class HdtIK:
 
     def viz_func(self, left_target_pose, right_target_pose, viz_info):
         left_xs, right_xs, left_q, right_q = viz_info
-        b = 0
+        b = 1
         self.tf2.send_transform(left_target_pose[b, :3].numpy().tolist(),
                                 left_target_pose[b, 3:].numpy().tolist(),
                                 parent='world', child='left_target')
@@ -186,6 +193,9 @@ class HdtIK:
     def get_joint_names(self):
         return self.joint_names
 
+    def get_num_joints(self):
+        return self.n_joints
+
 
 def main():
     tf.get_logger().setLevel(logging.ERROR)
@@ -199,13 +209,20 @@ def main():
     urdf_filename = pathlib.Path("/home/peter/catkin_ws/src/hdt_robot/hdt_michigan_description/urdf/hdt_michigan.urdf")
     ik_solver = HdtIK(urdf_filename)
 
-    left_target_pose = target(-0.3, 0.5, 0.3, 0, -pi / 2, -pi / 2)
-    right_target_pose = target(0.3, 0.5, 0.3, -pi / 2, -pi / 2, 0)
+    batch_size = 1000
+    viz = False
 
-    q, converged = ik_solver.solve(left_target_pose, right_target_pose, viz=True)
-    ik_solver.get_joint_names()
+    def _solve():
+        left_target_pose = tf.tile(target(-0.3, 1.0, 0.3, 0, -pi / 2, -pi / 2), [batch_size, 1])
+        right_target_pose = tf.tile(target(0.3, 1.0, 0.3, -pi / 2, -pi / 2, 0), [batch_size, 1])
 
-    print(f'{converged=}')
+        initial_value = tf.zeros([batch_size, ik_solver.get_num_joints()], dtype=tf.float32)
+        q, converged = ik_solver.solve(left_target_pose, right_target_pose, viz=viz, initial_value=initial_value)
+        ik_solver.get_joint_names()
+        print(f'{converged=}')
+
+    p = SimpleProfiler()
+    print(p.profile(5, _solve, skip_fisrt_n=0))
 
 
 if __name__ == '__main__':

@@ -129,7 +129,6 @@ class Frame(object):
         else:
             p = tf.zeros((batch_shape, 3)) if p is None else p
             m = tf.eye(3, batch_shape=(batch_shape,)) if m is None else m
-            assert p.shape[0] == batch_shape
             assert m.shape[0] == batch_shape
 
         if isinstance(m, tf.Variable):
@@ -175,13 +174,6 @@ class Frame(object):
         :return:
         """
         raise NotImplementedError()
-        if self.is_batch:
-            m34 = tf.concat([self.m, tf.zeros([3, 1], dtype=self.m.dtype)], axis=1)
-            m44 = tf.concat([m34, tf.constant([[0, 0, 0, 1]], dtype=self.m.dtype)], axis=0)
-            q = transformations.quaternion_from_matrix(m44)  # wxyz
-            return tf.concat([self.p, tf.reshape(tf.transpose(self.m, perm=(0, 2, 1)), [-1, 9])], axis=1)
-        else:
-            return tf.concat([self.p, tf.reshape(tf.transpose(self.m, perm=(1, 0)), [9])], axis=0)
 
     def inv(self):
         return Frame(p=-tf.squeeze(tf.matmul(self.m, tf.expand_dims(self.p, -1), transpose_a=True), -1),

@@ -50,18 +50,18 @@ class Joint:
         self.pose_0 = self.pose(tf.zeros([1], tf.float32), 1)
 
     def pose(self, a, batch_size: int):
-        # TODO implement origin
-
         if self.type is JointType.RotX:
-            return Frame(m=rot_x(a), batch_shape=1)
+            return Frame(m=rot_x(a), batch_shape=batch_size)
         elif self.type is JointType.RotY:
-            return Frame(m=rot_y(a), batch_shape=1)
+            return Frame(m=rot_y(a), batch_shape=batch_size)
         elif self.type is JointType.RotZ:
-            return Frame(m=rot_z(a), batch_shape=1)
+            return Frame(m=rot_z(a), batch_shape=batch_size)
         elif self.type is JointType.RotAxis:
-            return Frame(p=self.origin, m=rot_2(self.axis, a), batch_shape=1)
+            return Frame(p=self.origin, m=rot_2(self.axis, a), batch_shape=batch_size)
         elif self.type is JointType.NoneT:
-            return Frame(batch_shape=1)
+            return Frame(batch_shape=batch_size)
+        else:
+            raise NotImplementedError()
 
     def twist(self, a):
         if self.type is JointType.RotX:
@@ -84,9 +84,6 @@ class Mesh:
         self._area_faces = tf.convert_to_tensor(mesh.area_faces, dtype=dtype)
 
         triangles = np.copy(mesh.triangles)
-        # triangles[:, :, 0] = mesh.triangles[:, :, 2]
-        # triangles[:, :, 1] = mesh.triangles[:, :, 0]
-        # triangles[:, :, 2] = mesh.triangles[:, :, 1]
 
         self._triangles = tf.convert_to_tensor(triangles, dtype=dtype)
         sample = self.sample(10)
