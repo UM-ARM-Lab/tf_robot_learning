@@ -80,7 +80,7 @@ def return_frame(p, layout=FkLayout.xm):
         return p
 
 
-class Chain(object):
+class Chain:
     def __init__(self, segments):
         """
         Defines a kinematic Chain
