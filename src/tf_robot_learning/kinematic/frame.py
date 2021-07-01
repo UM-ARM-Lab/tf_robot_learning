@@ -18,10 +18,10 @@
 # along with tf_robot_learning. If not, see <http://www.gnu.org/licenses/>.
 
 import tensorflow as tf
+import transformations
 
 from tf_robot_learning.kinematic.utils.layout import FkLayout
 from tf_robot_learning.kinematic.utils.tf_utils import angular_vel_tensor, matmatmul, matvecmul
-import transformations
 
 
 class Rotation(tf.Tensor):
@@ -129,6 +129,8 @@ class Frame(object):
         else:
             p = tf.zeros((batch_shape, 3)) if p is None else p
             m = tf.eye(3, batch_shape=(batch_shape,)) if m is None else m
+            assert p.shape[0] == batch_shape
+            assert m.shape[0] == batch_shape
 
         if isinstance(m, tf.Variable):
             _m = tf.identity(m)
@@ -182,8 +184,8 @@ class Frame(object):
             return tf.concat([self.p, tf.reshape(tf.transpose(self.m, perm=(1, 0)), [9])], axis=0)
 
     def inv(self):
-        return Frame(p=-tf.matmul(self.m, tf.expand_dims(self.p, 1), transpose_a=True)[:, 0],
-                     m=tf.transpose(self.m))
+        return Frame(p=-tf.squeeze(tf.matmul(self.m, tf.expand_dims(self.p, -1), transpose_a=True), -1),
+                     m=tf.transpose(self.m, [0, 2, 1]))
 
     def __mul__(self, other):
         if isinstance(other, Twist):

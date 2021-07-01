@@ -14,6 +14,7 @@ from geometry_msgs.msg import Point
 from moveit_msgs.msg import DisplayRobotState
 from sensor_msgs.msg import JointState
 from tf.transformations import quaternion_from_euler
+from tf_robot_learning.kinematic.chain import Chain
 from tf_robot_learning.kinematic.urdf_utils import urdf_from_file, kdl_chain_from_urdf_model
 from tf_robot_learning.kinematic.utils.layout import FkLayout
 from visualization_msgs.msg import Marker
@@ -42,10 +43,10 @@ def orientation_error_mat2(r1, r2):
 
 
 @tf.function
-def pose_loss(chain, q, target_pose, theta=0.9):
+def compute_pose_loss(chain, q, target_pose):
     xs = chain.xs(q, layout=FkLayout.xm)
-    position = xs[-1, :3]
-    orientation = tf.reshape(xs[-1, 3:], [-1, 3, 3])
+    position = xs[:, -1, :3]
+    orientation = tf.reshape(xs[:, -1, 3:], [-1, 3, 3])
     target_position = target_pose[:, :3]
     target_quat = target_pose[:, 3:]
     target_orientation = tfr.from_quaternion(target_quat)
@@ -69,10 +70,11 @@ class HdtIK:
 
         self.joint_names = list(set(self.left.actuated_joint_names() + self.right.actuated_joint_names()))
         self.n_joints = len(self.joint_names)
-        self.left_joint_indices = [self.joint_names.index(jn) for jn in self.left.actuated_joint_names()]
-        self.right_joint_indices = [self.joint_names.index(jn) for jn in self.right.actuated_joint_names()]
+        self.left_idx = [self.joint_names.index(jn) for jn in self.left.actuated_joint_names()]
+        self.right_idx = [self.joint_names.index(jn) for jn in self.right.actuated_joint_names()]
 
         self.theta = 0.99
+        self.jl_alpha = 1.0
         self.initial_lr = 0.01
 
         # lr = tf.keras.optimizers.schedules.ExponentialDecay(0.5, 20, 0.9)
@@ -84,42 +86,61 @@ class HdtIK:
         self.joint_states_viz_pub = get_connected_publisher("joint_states_viz", JointState, queue_size=10)
         self.tf2 = TF2Wrapper()
 
-    def solve(self, left_target_pose, right_target_pose, viz=False):
-        joint_positions = tf.Variable([0.0] * self.n_joints, dtype=tf.float32)
+    def solve(self, left_target_pose, right_target_pose, initial_value=None, viz=False):
+        if initial_value is None:
+            batch_size = left_target_pose.shape[0]
+            initial_value = tf.zeros([batch_size, self.n_joints], dtype=tf.float32)
+        q = tf.Variable(initial_value)
 
         converged = False
         for _ in trange(5000):
-            loss, gradients, viz_info = self.opt(joint_positions, left_target_pose, right_target_pose)
+            loss, gradients, viz_info = self.opt(q, left_target_pose, right_target_pose)
             if loss < 5e-5:
                 converged = True
                 break
 
-            self.viz_func(left_target_pose, right_target_pose, viz_info)
+            if viz:
+                self.viz_func(left_target_pose, right_target_pose, viz_info)
 
-        return joint_positions, converged
+        return q, converged
 
-    def opt(self, joint_positions, left_target_pose, right_target_pose):
+    def opt(self, q, left_target_pose, right_target_pose):
         with tf.GradientTape(persistent=True) as tape:
-            loss, viz_info = self.step(joint_positions, left_target_pose, right_target_pose)
-        gradients = tape.gradient([loss], [joint_positions])
-        self.optimizer.apply_gradients(grads_and_vars=zip(gradients, [joint_positions]))
+            loss, viz_info = self.step(q, left_target_pose, right_target_pose)
+        gradients = tape.gradient([loss], [q])
+        self.optimizer.apply_gradients(grads_and_vars=zip(gradients, [q]))
         return loss, gradients, viz_info
 
-    def step(self, joint_positions, left_target_pose, right_target_pose):
-        left_joint_positions = tf.gather(joint_positions, self.left_joint_indices)
-        right_joint_positions = tf.gather(joint_positions, self.right_joint_indices)
-        left_xs, left_pos_error, left_rot_error = pose_loss(self.left, left_joint_positions, left_target_pose)
-        right_xs, right_pos_error, right_rot_error = pose_loss(self.right, right_joint_positions, right_target_pose)
-        left_loss = self.theta * left_pos_error + (1 - self.theta) * left_rot_error
-        right_loss = self.theta * right_pos_error + (1 - self.theta) * right_rot_error
-        loss = tf.reduce_mean(left_loss + right_loss)
+    def step(self, q, left_target_pose, right_target_pose):
+        left_q = tf.gather(q, self.left_idx, axis=1)
+        left_pose_loss, left_xs = self.compute_pose_loss(self.left, left_q, left_target_pose)
+        left_jl_loss = self.compute_jl_loss(self.left, left_q)
+        right_q = tf.gather(q, self.right_idx, axis=1)
+        right_pose_loss, right_xs = self.compute_pose_loss(self.right, right_q, right_target_pose)
+        right_jl_loss = self.compute_jl_loss(self.right, right_q)
+        loss = tf.reduce_mean(tf.math.add_n([left_pose_loss, right_pose_loss, left_jl_loss, right_jl_loss]))
 
-        viz_info = [left_xs, right_xs, left_joint_positions, right_joint_positions]
+        viz_info = [left_xs, right_xs, left_q, right_q]
 
         return loss, viz_info
 
+    def compute_jl_loss(self, chain: Chain, q):
+        joint_limits = chain.joint_limits
+        jl_low = joint_limits[:, 0][tf.newaxis]
+        jl_high = joint_limits[:, 1][tf.newaxis]
+        low_error = tf.math.maximum(jl_low - q, 0)
+        high_error = tf.math.maximum(q - jl_high, 0)
+        jl_errors = tf.math.maximum(low_error, high_error)
+        jl_loss = tf.reduce_sum(jl_errors, axis=-1)
+        return self.jl_alpha * jl_loss
+
+    def compute_pose_loss(self, chain: Chain, q, target_pose):
+        xs, pos_error, rot_error = compute_pose_loss(chain, q, target_pose)
+        pose_loss = self.theta * pos_error + (1 - self.theta) * rot_error
+        return pose_loss, xs
+
     def viz_func(self, left_target_pose, right_target_pose, viz_info):
-        left_xs, right_xs, left_joint_positions, right_joint_positions = viz_info
+        left_xs, right_xs, left_q, right_q = viz_info
         b = 0
         self.tf2.send_transform(left_target_pose[b, :3].numpy().tolist(),
                                 left_target_pose[b, 3:].numpy().tolist(),
@@ -128,12 +149,12 @@ class HdtIK:
                                 right_target_pose[b, 3:].numpy().tolist(),
                                 parent='world', child='right_target')
 
-        positions = tf.concat([left_xs[:, :3], right_xs[:, :3]], axis=0)
+        positions = tf.concat([left_xs[b, :, :3], right_xs[b, :, :3]], axis=0)
 
         robot_state_dict = {}
-        for name, position in zip(self.left.actuated_joint_names(), left_joint_positions.numpy().tolist()):
+        for name, position in zip(self.left.actuated_joint_names(), left_q[b].numpy().tolist()):
             robot_state_dict[name] = position
-        for name, position in zip(self.right.actuated_joint_names(), right_joint_positions.numpy().tolist()):
+        for name, position in zip(self.right.actuated_joint_names(), right_q[b].numpy().tolist()):
             robot_state_dict[name] = position
 
         robot = DisplayRobotState()
@@ -181,7 +202,7 @@ def main():
     left_target_pose = target(-0.3, 0.5, 0.3, 0, -pi / 2, -pi / 2)
     right_target_pose = target(0.3, 0.5, 0.3, -pi / 2, -pi / 2, 0)
 
-    joint_positions, converged = ik_solver.solve(left_target_pose, right_target_pose)
+    q, converged = ik_solver.solve(left_target_pose, right_target_pose, viz=True)
     ik_solver.get_joint_names()
 
     print(f'{converged=}')

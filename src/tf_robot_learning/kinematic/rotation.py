@@ -40,9 +40,10 @@ def twist_2(axis, a):
 
 
 def skew_x(u):
-    return tf.stack([[0., -u[2], u[1]],
-                     [u[2], 0., -u[0]],
-                     [-u[1], u[0], 0.]])
+    zeros = tf.zeros([u.shape[0]])
+    return tf.transpose(tf.stack([[zeros, -u[:, 2], u[:, 1]],
+                                  [u[:, 2], zeros, -u[:, 0]],
+                                  [-u[:, 1], u[:, 0], zeros]]), [2, 0, 1])
 
 
 def rot_2(axis, a):
@@ -53,10 +54,11 @@ def rot_2(axis, a):
     :return:
     """
     if isinstance(a, float) or a.shape.ndims == 0:
-        return tf.cos(a) * tf.eye(3) + tf.sin(a) * skew_x(axis) + (1 - tf.cos(a)) * tf.einsum('i,j->ij', axis, axis)
+        return tf.cos(a) * tf.eye(3) + tf.sin(a) * skew_x(axis[None])[0] + (1 - tf.cos(a)) * tf.einsum('i,j->ij', axis,
+                                                                                                       axis)
     else:
-        return tf.cos(a)[:, None, None] * tf.eye(3)[None] + tf.sin(a)[:, None, None] * skew_x(axis)[None] + \
-               (1 - tf.cos(a)[:, None, None]) * tf.einsum('i,j->ij', axis, axis)[None]
+        return tf.cos(a)[:, None, None] * tf.eye(3)[None] + tf.sin(a)[:, None, None] * skew_x(axis) + \
+               (1 - tf.cos(a)[:, None, None]) * tf.einsum('bi,bj->bij', axis, axis)
 
 
 def rpy(rpy):

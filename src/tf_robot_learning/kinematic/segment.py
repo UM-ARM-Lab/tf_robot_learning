@@ -17,6 +17,7 @@
 # You should have received a copy of the GNU General Public License
 # along with tf_robot_learning. If not, see <http://www.gnu.org/licenses/>.
 from tf_robot_learning.kinematic.utils.tf_utils import matvecmul
+import tensorflow as tf
 
 
 class Segment:
@@ -30,16 +31,16 @@ class Segment:
         :type f_tip: tk.Frame
         """
         self.joint = joint
-        self.f_tip = joint.pose(0.).inv() * f_tip
+        self.f_tip = joint.pose(tf.zeros([1]), 1).inv() * f_tip
 
         self.child_name = child_name
 
         self.link = link
 
-        self.pose_0 = self.pose(0.)
+        self.pose_0 = self.pose(tf.zeros([1], tf.float32), 1)
 
-    def pose(self, q):
-        return self.joint.pose(q) * self.f_tip
+    def pose(self, q, batch_size):
+        return self.joint.pose(q, batch_size) * self.f_tip
 
     def twist(self, q, qdot=0.):
         return self.joint.twist(qdot).ref_point(matvecmul(self.joint.pose(q).m, self.f_tip.p))

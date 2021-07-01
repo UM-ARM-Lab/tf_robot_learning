@@ -58,8 +58,9 @@ def urdf_pose_to_tk_frame(pose):
         if pose.rotation is not None:
             rot = pose.rotation
 
-    return Frame(p=tf.constant(pos, dtype=tf.float32),
-                 m=tf.constant(quat_to_rot(euler_to_quat(*rot)), dtype=tf.float32))
+    return Frame(p=tf.constant([pos], dtype=tf.float32),
+                 m=tf.constant([quat_to_rot(euler_to_quat(*rot))], dtype=tf.float32),
+                 batch_shape=1)
 
 
 def urdf_joint_to_tk_joint(jnt):
@@ -67,9 +68,8 @@ def urdf_joint_to_tk_joint(jnt):
 
     if jnt.joint_type == 'revolute':
         axis = tf.constant(jnt.axis, dtype=tf.float32)
-        return Joint(JointType.RotAxis, origin=origin_frame.p,
-                     axis=tf.matmul(origin_frame.m, tf.expand_dims(axis, 1))[:, 0], name=jnt.name,
-                     limits=jnt.limit), origin_frame
+        axis = tf.squeeze(tf.matmul(origin_frame.m, tf.expand_dims(axis, -1)), -1)
+        return Joint(JointType.RotAxis, origin=origin_frame.p, axis=axis, name=jnt.name, limits=jnt.limit), origin_frame
 
     if jnt.joint_type == 'fixed' or jnt.joint_type == 'prismatic':
         return Joint(JointType.NoneT, name=jnt.name), origin_frame
@@ -134,15 +134,14 @@ def kdl_chain_from_urdf_model(urdf, root=None, tip=None,
 
             for jidx, jnt in enumerate(urdf.joints):
                 if jnt.name == joint and jnt.joint_type in ['revolute', 'fixed', 'prismatic']:
-                    tk_jnt, tk_origin = urdf_joint_to_tk_joint(urdf.joints[jidx])
+                    tk_jnt, _ = urdf_joint_to_tk_joint(urdf.joints[jidx])
                     tk_origin = urdf_pose_to_tk_frame(urdf.joints[jidx].origin)
 
                     tk_lnk = urdf_link_to_tk_link(urdf.link_map[child_name])
 
                     if load_collision and urdf.link_map[child_name].collision is not None:
                         import trimesh
-                        filename = mesh_path + \
-                                   urdf.link_map[child_name].collision.geometry.filename.split('/')[-1]
+                        filename = mesh_path + urdf.link_map[child_name].collision.geometry.filename.split('/')[-1]
 
                         tk_lnk.collision_mesh = trimesh.load(filename)
 

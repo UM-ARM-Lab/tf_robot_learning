@@ -101,8 +101,9 @@ class Chain:
     @property
     def joint_limits(self):
         if self._joint_limits is None:
-            self._joint_limits = [[seg.joint.limits['low'], seg.joint.limits['up']]
-                                  for seg in self.segments if seg.joint.type != JointType.NoneT]
+            self._joint_limits = tf.constant([[seg.joint.limits['low'], seg.joint.limits['up']]
+                                              for seg in self.segments if seg.joint.type != JointType.NoneT],
+                                             dtype=tf.float32)
 
         return self._joint_limits
 
@@ -263,23 +264,23 @@ class Chain:
         """
 
         if q.shape.ndims == 1:
-            p = self.segments[0].pose(q[0])
+            p = self.segments[0].pose(q[0], 1)
         elif q.shape.ndims == 2:
-            p = self.segments[0].pose(q[:, 0])
+            p = self.segments[0].pose(q[:, 0], q.shape[0])
 
         j = 1
 
         for i in range(1, self.nb_segm - n):
             if self.segments[i].joint.type is not JointType.NoneT:
                 if q.shape.ndims == 1:
-                    p = p * self.segments[i].pose(q[j])
+                    p = p * self.segments[i].pose(q[j], 1)
                 elif q.shape.ndims == 2:
-                    p = p * self.segments[i].pose(q[:, j])
+                    p = p * self.segments[i].pose(q[:, j], q.shape[0])
                 else:
                     raise NotImplementedError
                 j += 1
             else:
-                p = p * self.segments[i].pose(0.)
+                p = p * self.segments[i].pose(0., q.shape[0])
 
         return return_frame(p, layout)
 
@@ -312,11 +313,12 @@ class Chain:
         :param get_links: get forward kinematics of links and center of mass
         :return:
         """
+        batch_size = q.shape[0]
 
         if floating_base is None:
-            p = [Frame()]
+            p = [Frame(batch_shape=batch_size)]
         elif isinstance(floating_base, tuple) or isinstance(floating_base, list):
-            p = [Frame(p=floating_base[0], m=floating_base[1])]
+            p = [Frame(p=floating_base[0], m=floating_base[1], batch_shape=batch_size)]
         elif isinstance(floating_base, Frame):
             p = [floating_base]
         else:
@@ -328,18 +330,18 @@ class Chain:
         for i in range(self.nb_segm):
             if self.segments[i].joint.type is not JointType.NoneT:
                 if isinstance(q, list) or q.shape.ndims == 1:
-                    p += [p[-1] * self.segments[i].pose(q[j])]
+                    p += [p[-1] * self.segments[i].pose(q[j], batch_size)]
                     if (get_links or get_collision_samples) and self.segments[i].link is not None:
                         links += [p[-1] * self.segments[i].link.frame]
                 elif q.shape.ndims == 2:
-                    p += [p[-1] * self.segments[i].pose(q[:, j])]
+                    p += [p[-1] * self.segments[i].pose(q[:, j], batch_size)]
                     if (get_links or get_collision_samples) and self.segments[i].link is not None:
                         links += [p[-1] * self.segments[i].link.frame]
                 else:
                     raise NotImplementedError
                 j += 1
             else:
-                p += [p[-1] * self.segments[i].pose(0.)]
+                p += [p[-1] * self.segments[i].pose(0., batch_size)]
                 if (get_links or get_collision_samples) and self.segments[i].link is not None:
                     links += [p[-1] * self.segments[i].link.frame]
 
@@ -385,6 +387,7 @@ class Chain:
         :return:
         """
         # TODO is very slow !! try another implementation
+        batch_size = q.shape[0]
 
         # init base frame
         is_batch = not isinstance(q, list) and q.shape.ndims == 2
@@ -407,7 +410,7 @@ class Chain:
             # get pose of following segment
             if self.segments[i].joint.type is not JointType.NoneT:
                 _q = q[:, j] if is_batch else q[j]
-                total = T_tmp * self.segments[i].pose(_q)
+                total = T_tmp * self.segments[i].pose(_q, batch_size)
                 t_tmp = T_tmp.m * self.segments[i].twist(_q, 1.0)
             else:
                 total = T_tmp * self.segments[i].pose_0

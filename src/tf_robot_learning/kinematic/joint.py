@@ -47,21 +47,21 @@ class Joint:
         self.axis = axis
         self.origin = origin
 
-        self.pose_0 = self.pose(0.)
+        self.pose_0 = self.pose(tf.zeros([1], tf.float32), 1)
 
-    def pose(self, a):
+    def pose(self, a, batch_size: int):
         # TODO implement origin
 
         if self.type is JointType.RotX:
-            return Frame(m=rot_x(a))
+            return Frame(m=rot_x(a), batch_shape=1)
         elif self.type is JointType.RotY:
-            return Frame(m=rot_y(a))
+            return Frame(m=rot_y(a), batch_shape=1)
         elif self.type is JointType.RotZ:
-            return Frame(m=rot_z(a))
+            return Frame(m=rot_z(a), batch_shape=1)
         elif self.type is JointType.RotAxis:
-            return Frame(p=self.origin, m=rot_2(self.axis, a))
+            return Frame(p=self.origin, m=rot_2(self.axis, a), batch_shape=1)
         elif self.type is JointType.NoneT:
-            return Frame()
+            return Frame(batch_shape=1)
 
     def twist(self, a):
         if self.type is JointType.RotX:
