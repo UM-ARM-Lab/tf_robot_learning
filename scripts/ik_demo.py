@@ -57,7 +57,7 @@ def compute_pose_loss(chain, q, target_pose):
     return xs, position_error, _orientation_error
 
 
-@tf.function
+# @tf.function
 def compute_jl_loss(chain: Chain, q):
     joint_limits = chain.joint_limits
     jl_low = joint_limits[:, 0][tf.newaxis]
@@ -86,8 +86,8 @@ class HdtIK:
         self.left_idx = [self.joint_names.index(jn) for jn in self.left.actuated_joint_names()]
         self.right_idx = [self.joint_names.index(jn) for jn in self.right.actuated_joint_names()]
 
-        self.theta = 0.99
-        self.jl_alpha = 1.0
+        self.theta = 0.995
+        self.jl_alpha = 0.1
         self.initial_lr = 0.01
         self.loss_threshold = 1e-4
 
@@ -148,7 +148,7 @@ class HdtIK:
 
     def viz_func(self, left_target_pose, right_target_pose, viz_info):
         left_xs, right_xs, left_q, right_q = viz_info
-        b = 1
+        b = 0
         self.tf2.send_transform(left_target_pose[b, :3].numpy().tolist(),
                                 left_target_pose[b, 3:].numpy().tolist(),
                                 parent='world', child='left_target')
@@ -209,20 +209,21 @@ def main():
     urdf_filename = pathlib.Path("/home/peter/catkin_ws/src/hdt_robot/hdt_michigan_description/urdf/hdt_michigan.urdf")
     ik_solver = HdtIK(urdf_filename)
 
-    batch_size = 1000
-    viz = False
+    batch_size = 1
+    viz = True
 
     def _solve():
-        left_target_pose = tf.tile(target(-0.3, 1.0, 0.3, 0, -pi / 2, -pi / 2), [batch_size, 1])
-        right_target_pose = tf.tile(target(0.3, 1.0, 0.3, -pi / 2, -pi / 2, 0), [batch_size, 1])
+        left_target_pose = tf.tile(target(-0.3, 0.6, -0.5, 0, -pi / 2, -pi / 2), [batch_size, 1])
+        right_target_pose = tf.tile(target(0.3, 0.6, -0.4, -pi / 2, -pi / 2, 0), [batch_size, 1])
 
         initial_value = tf.zeros([batch_size, ik_solver.get_num_joints()], dtype=tf.float32)
         q, converged = ik_solver.solve(left_target_pose, right_target_pose, viz=viz, initial_value=initial_value)
         ik_solver.get_joint_names()
         print(f'{converged=}')
 
-    p = SimpleProfiler()
-    print(p.profile(5, _solve, skip_fisrt_n=0))
+    # p = SimpleProfiler()
+    # print(p.profile(1, _solve, skip_fisrt_n=0))
+    _solve()
 
 
 if __name__ == '__main__':
