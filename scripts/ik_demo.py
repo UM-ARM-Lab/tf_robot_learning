@@ -20,6 +20,7 @@ from visualization_msgs.msg import Marker
 
 
 def orientation_error_quat(q1, q2):
+    # NOTE: I don't know of a correct & smooth matrix -> quaternion implementation
     # https://www.ri.cmu.edu/pub_files/pub4/kuffner_james_2004_1/kuffner_james_2004_1.pdf
     # https://www.cs.cmu.edu/~cga/dynopt/readings/Rmetric.pdf
     return 1 - tf.square(tf.einsum('bi,bi->b', q1, q2))
@@ -33,6 +34,7 @@ def orientation_error_mat(r1, r2):
 
 
 def orientation_error_mat2(r1, r2):
+    # NOTE: not differentiable
     # https://www.cs.cmu.edu/~cga/dynopt/readings/Rmetric.pdf
     R_Rt = tf.matmul(r1, tf.transpose(r2, [0, 2, 1]))
     log = tf.cast(tf.linalg.logm(tf.cast(R_Rt, tf.complex64)), tf.float32)
@@ -94,6 +96,7 @@ def main():
     debug_viz = False
     theta = 0.99
 
+    converged = False
     for i in trange(1000):
         def _step():
             with tf.GradientTape(persistent=True) as tape:
@@ -119,6 +122,7 @@ def main():
         left_q, right_q, left_xs, right_xs = debug
 
         if loss < 1e-6:
+            converged = True
             break
 
         # VIZ
