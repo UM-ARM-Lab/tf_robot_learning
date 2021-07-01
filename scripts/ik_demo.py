@@ -48,7 +48,6 @@ def pose_loss(chain, q, target_pose, theta=0.9):
     target_quat = target_pose[:, 3:]
     target_orientation = tfr.from_quaternion(target_quat)
     _orientation_error = orientation_error_mat(target_orientation, orientation)
-    # _orientation_error = orientation_error_mat2(target_orientation, orientation)
     position_error = tf.reduce_sum(tf.square(position - target_position), axis=-1)
 
     return xs, position_error, _orientation_error
