@@ -59,117 +59,132 @@ def target(x, y, z, roll, pitch, yaw):
     return tf.cast(tf.expand_dims(tf.concat([[x, y, z], quaternion_from_euler(roll, pitch, yaw)], 0), 0), tf.float32)
 
 
+class HdtIK:
+
+    def __init__(self, urdf_filename: pathlib.Path):
+        self.urdf = urdf_from_file(urdf_filename.as_posix())
+
+        self.left = kdl_chain_from_urdf_model(self.urdf, tip='left_tool')
+        self.right = kdl_chain_from_urdf_model(self.urdf, tip='right_tool')
+
+        self.joint_names = list(set(self.left.actuated_joint_names() + self.right.actuated_joint_names()))
+        self.n_joints = len(self.joint_names)
+        self.left_joint_indices = [self.joint_names.index(jn) for jn in self.left.actuated_joint_names()]
+        self.right_joint_indices = [self.joint_names.index(jn) for jn in self.right.actuated_joint_names()]
+
+        self.theta = 0.99
+        self.initial_lr = 0.01
+
+        # lr = tf.keras.optimizers.schedules.ExponentialDecay(0.5, 20, 0.9)
+        # opt = tf.keras.optimizers.SGD(lr)
+        self.optimizer = tf.keras.optimizers.Adam(self.initial_lr, amsgrad=True)
+
+        self.display_robot_state_pub = get_connected_publisher("display_robot_state", DisplayRobotState, queue_size=10)
+        self.point_pub = get_connected_publisher("point", Marker, queue_size=10)
+        self.joint_states_viz_pub = get_connected_publisher("joint_states_viz", JointState, queue_size=10)
+        self.tf2 = TF2Wrapper()
+
+    def solve(self, left_target_pose, right_target_pose, viz=False):
+        joint_positions = tf.Variable([0.0] * self.n_joints, dtype=tf.float32)
+
+        converged = False
+        for _ in trange(5000):
+            loss, gradients, viz_info = self.opt(joint_positions, left_target_pose, right_target_pose)
+            if loss < 5e-5:
+                converged = True
+                break
+
+            self.viz_func(left_target_pose, right_target_pose, viz_info)
+
+        return joint_positions, converged
+
+    def opt(self, joint_positions, left_target_pose, right_target_pose):
+        with tf.GradientTape(persistent=True) as tape:
+            loss, viz_info = self.step(joint_positions, left_target_pose, right_target_pose)
+        gradients = tape.gradient([loss], [joint_positions])
+        self.optimizer.apply_gradients(grads_and_vars=zip(gradients, [joint_positions]))
+        return loss, gradients, viz_info
+
+    def step(self, joint_positions, left_target_pose, right_target_pose):
+        left_joint_positions = tf.gather(joint_positions, self.left_joint_indices)
+        right_joint_positions = tf.gather(joint_positions, self.right_joint_indices)
+        left_xs, left_pos_error, left_rot_error = pose_loss(self.left, left_joint_positions, left_target_pose)
+        right_xs, right_pos_error, right_rot_error = pose_loss(self.right, right_joint_positions, right_target_pose)
+        left_loss = self.theta * left_pos_error + (1 - self.theta) * left_rot_error
+        right_loss = self.theta * right_pos_error + (1 - self.theta) * right_rot_error
+        loss = tf.reduce_mean(left_loss + right_loss)
+
+        viz_info = [left_xs, right_xs, left_joint_positions, right_joint_positions]
+
+        return loss, viz_info
+
+    def viz_func(self, left_target_pose, right_target_pose, viz_info):
+        left_xs, right_xs, left_joint_positions, right_joint_positions = viz_info
+        b = 0
+        self.tf2.send_transform(left_target_pose[b, :3].numpy().tolist(),
+                                left_target_pose[b, 3:].numpy().tolist(),
+                                parent='world', child='left_target')
+        self.tf2.send_transform(right_target_pose[b, :3].numpy().tolist(),
+                                right_target_pose[b, 3:].numpy().tolist(),
+                                parent='world', child='right_target')
+
+        positions = tf.concat([left_xs[:, :3], right_xs[:, :3]], axis=0)
+
+        robot_state_dict = {}
+        for name, position in zip(self.left.actuated_joint_names(), left_joint_positions.numpy().tolist()):
+            robot_state_dict[name] = position
+        for name, position in zip(self.right.actuated_joint_names(), right_joint_positions.numpy().tolist()):
+            robot_state_dict[name] = position
+
+        robot = DisplayRobotState()
+        robot.state.joint_state.name = robot_state_dict.keys()
+        robot.state.joint_state.position = robot_state_dict.values()
+        robot.state.joint_state.header.stamp = rospy.Time.now()
+        self.display_robot_state_pub.publish(robot)
+        self.joint_states_viz_pub.publish(robot.state.joint_state)
+
+        msg = Marker()
+        msg.header.frame_id = 'world'
+        msg.header.stamp = rospy.Time.now()
+        msg.id = 0
+        msg.type = Marker.SPHERE_LIST
+        msg.action = Marker.ADD
+        msg.pose.orientation.w = 1
+        scale = 0.01
+        msg.scale.x = scale
+        msg.scale.y = scale
+        msg.scale.z = scale
+        msg.color.r = 1
+        msg.color.a = 1
+        for position in positions:
+            p = Point(x=position[0], y=position[1], z=position[2])
+            msg.points.append(p)
+
+        self.point_pub.publish(msg)
+
+    def get_joint_names(self):
+        return self.joint_names
+
+
 def main():
     tf.get_logger().setLevel(logging.ERROR)
     rospy.init_node("ik_demo")
-
-    pub = get_connected_publisher("display_robot_state", DisplayRobotState, queue_size=10)
-    pub2 = get_connected_publisher("point", Marker, queue_size=10)
-    pub3 = get_connected_publisher("joint_states_viz", JointState, queue_size=10)
-    tf2 = TF2Wrapper()
-
-    urdf_filename = pathlib.Path("/home/peter/catkin_ws/src/hdt_robot/hdt_michigan_description/urdf/hdt_michigan.urdf")
 
     def _on_error(_):
         pass
 
     urdf_parser_py.xml_reflection.core.on_error = _on_error
-    urdf = urdf_from_file(urdf_filename.as_posix())
 
-    left = kdl_chain_from_urdf_model(urdf, tip='left_tool')
-    right = kdl_chain_from_urdf_model(urdf, tip='right_tool')
+    urdf_filename = pathlib.Path("/home/peter/catkin_ws/src/hdt_robot/hdt_michigan_description/urdf/hdt_michigan.urdf")
+    ik_solver = HdtIK(urdf_filename)
 
-    robot = DisplayRobotState()
-    joint_names = list(set(left.actuated_joint_names() + right.actuated_joint_names()))
-    n_joints = len(joint_names)
-    left_joint_indices = [joint_names.index(jn) for jn in left.actuated_joint_names()]
-    right_joint_indices = [joint_names.index(jn) for jn in right.actuated_joint_names()]
-
-    # lr = tf.keras.optimizers.schedules.ExponentialDecay(0.5, 20, 0.9)
-    # opt = tf.keras.optimizers.SGD(lr)
-    opt = tf.keras.optimizers.Adam(0.01)
     left_target_pose = target(-0.3, 0.5, 0.3, 0, -pi / 2, -pi / 2)
     right_target_pose = target(0.3, 0.5, 0.3, -pi / 2, -pi / 2, 0)
-    q = tf.Variable([0.0] * n_joints, dtype=tf.float32)
-    variables = [q]
 
-    debug_viz = False
-    theta = 0.99
+    joint_positions, converged = ik_solver.solve(left_target_pose, right_target_pose)
+    ik_solver.get_joint_names()
 
-    converged = False
-    for i in trange(1000):
-        def _step():
-            with tf.GradientTape(persistent=True) as tape:
-                left_q = tf.gather(q, left_joint_indices)
-                right_q = tf.gather(q, right_joint_indices)
-                left_xs, left_pos_error, left_rot_error = pose_loss(left, left_q, left_target_pose)
-                right_xs, right_pos_error, right_rot_error = pose_loss(right, right_q, right_target_pose)
-                left_loss = theta * left_pos_error + (1 - theta) * left_rot_error
-                right_loss = theta * right_pos_error + (1 - theta) * right_rot_error
-                loss = tf.reduce_mean(left_loss + right_loss)
-
-            if debug_viz:
-                print(tf.linalg.norm(tape.gradient(left_pos_error, variables)[0].values).numpy(),
-                      tf.linalg.norm(tape.gradient(left_rot_error, variables)[0].values).numpy(),
-                      tf.linalg.norm(tape.gradient(right_pos_error, variables)[0].values).numpy(),
-                      tf.linalg.norm(tape.gradient(right_rot_error, variables)[0].values).numpy())
-                print("LOSS", loss.numpy())
-            gradients = tape.gradient([loss], variables)
-            opt.apply_gradients(grads_and_vars=zip(gradients, variables))
-            return loss, (left_q, right_q, left_xs, right_xs)
-
-        loss, debug = _step()
-        left_q, right_q, left_xs, right_xs = debug
-
-        if loss < 1e-6:
-            converged = True
-            break
-
-        # VIZ
-        def _viz():
-            b = 0
-            tf2.send_transform(left_target_pose[b, :3].numpy().tolist(),
-                               left_target_pose[b, 3:].numpy().tolist(),
-                               parent='world', child='left_target')
-            tf2.send_transform(right_target_pose[b, :3].numpy().tolist(),
-                               right_target_pose[b, 3:].numpy().tolist(),
-                               parent='world', child='right_target')
-
-            positions = tf.concat([left_xs[:, :3], right_xs[:, :3]], axis=0)
-
-            robot_state_dict = {}
-            for name, position in zip(left.actuated_joint_names(), left_q.numpy().tolist()):
-                robot_state_dict[name] = position
-            for name, position in zip(right.actuated_joint_names(), right_q.numpy().tolist()):
-                robot_state_dict[name] = position
-
-            robot.state.joint_state.name = robot_state_dict.keys()
-            robot.state.joint_state.position = robot_state_dict.values()
-            robot.state.joint_state.header.stamp = rospy.Time.now()
-            pub.publish(robot)
-            pub3.publish(robot.state.joint_state)
-
-            msg = Marker()
-            msg.header.frame_id = 'world'
-            msg.header.stamp = rospy.Time.now()
-            msg.id = 0
-            msg.type = Marker.SPHERE_LIST
-            msg.action = Marker.ADD
-            msg.pose.orientation.w = 1
-            scale = 0.01
-            msg.scale.x = scale
-            msg.scale.y = scale
-            msg.scale.z = scale
-            msg.color.r = 1
-            msg.color.a = 1
-            for position in positions:
-                p = Point(x=position[0], y=position[1], z=position[2])
-                msg.points.append(p)
-
-            pub2.publish(msg)
-
-        if debug_viz:
-            _viz()
+    print(f'{converged=}')
 
 
 if __name__ == '__main__':
