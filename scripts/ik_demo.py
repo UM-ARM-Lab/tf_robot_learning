@@ -3,7 +3,6 @@ import pathlib
 from math import pi
 
 import tensorflow as tf
-from tensorflow_graphics.geometry.transformation import quaternion as tfq
 from tensorflow_graphics.geometry.transformation import rotation_matrix_3d as tfr
 from tqdm import trange
 
@@ -40,47 +39,14 @@ def orientation_error_mat2(r1, r2):
     return tf.linalg.norm(log, ord='fro', axis=[-2, -1])
 
 
-def quaternion_from_matrix(m):
-    def make_q(x, y, z, w):
-        return tf.stack([x, y, z, w], 0)
-
-    qs = []
-    batch_size = m.shape[0]
-    for b in range(batch_size):
-        m_b = m[b]
-        # q = tf.cast(R.from_matrix(m_b).as_quat(), tf.float32)
-        # qs.append(q)
-        # continue
-        if m_b[2, 2] < 0:
-            if m_b[0, 0] > m_b[1, 1]:
-                t = 1 + m_b[0, 0] - m_b[1, 1] - m_b[2, 2]
-                q = make_q(t, m_b[0, 1] + m_b[1, 0], m_b[2, 0] + m_b[0, 2], m_b[1, 2] - m_b[2, 1])
-            else:
-                t = 1 - m_b[0, 0] + m_b[1, 1] - m_b[2, 2]
-                q = make_q(m_b[0, 1] + m_b[1, 0], t, m_b[1, 2] + m_b[2, 1], m_b[2, 0] - m_b[0, 2])
-        else:
-            if m_b[0, 0] < -m_b[1, 1]:
-                t = 1 - m_b[0, 0] - m_b[1, 1] + m_b[2, 2]
-                q = make_q(m_b[2, 0] + m_b[0, 2], m_b[1, 2] + m_b[2, 1], t, m_b[0, 1] - m_b[1, 0])
-            else:
-                t = 1 + m_b[0, 0] + m_b[1, 1] + m_b[2, 2]
-                q = make_q(m_b[1, 2] - m_b[2, 1], m_b[2, 0] - m_b[0, 2], m_b[0, 1] - m_b[1, 0], t)
-        q *= 0.5 / tf.sqrt(t)
-        qs.append(q)
-    return tf.stack(qs, 0)
-
-
 @tf.function
 def pose_loss(chain, q, target_pose, theta=0.9):
     xs = chain.xs(q, layout=FkLayout.xm)
     position = xs[-1, :3]
     orientation = tf.reshape(xs[-1, 3:], [-1, 3, 3])
-    # quat = tfq.from_rotation_matrix(orientation)
-    # quat = quaternion_from_matrix(orientation)
     target_position = target_pose[:, :3]
     target_quat = target_pose[:, 3:]
     target_orientation = tfr.from_quaternion(target_quat)
-    # _orientation_error = orientation_error_quat(target_quat, quat)
     _orientation_error = orientation_error_mat(target_orientation, orientation)
     # _orientation_error = orientation_error_mat2(target_orientation, orientation)
     position_error = tf.reduce_sum(tf.square(position - target_position), axis=-1)
@@ -203,14 +169,5 @@ def main():
             _viz()
 
 
-def test_q():
-    for i in range(100):
-        m = tf.random.uniform([1, 3, 3], -1, 1, dtype=tf.float32)
-        my_quat = quaternion_from_matrix(m)
-        tf_quat = tfq.from_rotation_matrix(m)
-        print(tf.linalg.norm(my_quat - tf_quat))
-
-
 if __name__ == '__main__':
-    # test_q()
     main()
