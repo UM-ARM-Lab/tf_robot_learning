@@ -1,5 +1,3 @@
-# tf_robot_learning, a all-around tensorflow library for robotics.
-#
 # Copyright (c) 2020 Idiap Research Institute, http://www.idiap.ch/
 # Written by Emmanuel Pignat <emmanuel.pignat@idiap.ch>,
 #
@@ -16,18 +14,14 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with tf_robot_learning. If not, see <http://www.gnu.org/licenses/>.
+from typing import List
 
-from collections import OrderedDict
-
-import matplotlib.pyplot as plt
-import numpy as np
 import tensorflow as tf
-from tensorflow_probability import distributions as ds
 
 from tf_robot_learning.kinematic.frame import Frame
 from tf_robot_learning.kinematic.joint import JointType
+from tf_robot_learning.kinematic.segment import Segment
 from tf_robot_learning.kinematic.utils.layout import FkLayout
-from tf_robot_learning.kinematic.utils.plot_utils import axis_equal_3d
 
 
 def stack_batch(vecs):
@@ -81,25 +75,15 @@ def return_frame(p, layout=FkLayout.xm):
 
 
 class Chain:
-    def __init__(self, segments):
-        """
-        Defines a kinematic Chain
-
-        :param segments:
-        """
+    def __init__(self, segments: List[Segment]):
         self._segments = segments
         self.nb_segm = len(segments)
-        self.nb_joint = len([seg for seg in segments if seg.joint.type != JointType.NoneT])
 
         self._joint_limits = None
-        self._mean_pose = None
-        self._masses = None
-        self._mass = None
         self._names = None
         self._nb_joints = None
 
-    @property
-    def joint_limits(self):
+    def get_joint_limits(self):
         if self._joint_limits is None:
             self._joint_limits = tf.constant([[seg.joint.limits['low'], seg.joint.limits['up']]
                                               for seg in self.segments if seg.joint.type != JointType.NoneT],
@@ -111,40 +95,6 @@ class Chain:
     def segments(self):
         return self._segments
 
-    def ee_frame(self, q, n=0, layout=FkLayout.xm):
-        """
-        Pose of last-n segment of the cain
-
-        :param q:		tf.Tensor()
-            Joint angles
-        :param n:		int
-            index from end of segment to get
-        :param layout:
-            layout of frame
-        :return:
-        """
-
-        if q.shape.ndims == 1:
-            p = self.segments[0].pose(q[0], 1)
-        elif q.shape.ndims == 2:
-            p = self.segments[0].pose(q[:, 0], q.shape[0])
-
-        j = 1
-
-        for i in range(1, self.nb_segm - n):
-            if self.segments[i].joint.type is not JointType.NoneT:
-                if q.shape.ndims == 1:
-                    p = p * self.segments[i].pose(q[j], 1)
-                elif q.shape.ndims == 2:
-                    p = p * self.segments[i].pose(q[:, j], q.shape[0])
-                else:
-                    raise NotImplementedError
-                j += 1
-            else:
-                p = p * self.segments[i].pose(0., q.shape[0])
-
-        return return_frame(p, layout)
-
     def fk(self, q, layout=FkLayout.xm, floating_base=None):
         """
         Pose of all segments of the chain
@@ -154,6 +104,8 @@ class Chain:
         :param floating_base Frame() or tuple (p translation vector, m rotation matrix)
         :return:
         """
+        assert q.shape[1] == self.get_num_joints()
+
         batch_size = q.shape[0]
 
         if floating_base is None:
@@ -184,7 +136,9 @@ class Chain:
     def actuated_joint_names(self):
         if self._names is None or self._names is None:
             self._names = [seg.joint.name for seg in self.segments if seg.joint.type != JointType.NoneT]
-
-            self._nb_joints = len(self._names)
-
         return self._names
+
+    def get_num_joints(self):
+        if self._nb_joints is None:
+            self._nb_joints = len(self.actuated_joint_names())
+        return self._nb_joints

@@ -56,7 +56,7 @@ def compute_pose_loss(xs, target_pose):
 
 
 def compute_jl_loss(chain: Chain, q):
-    joint_limits = chain.joint_limits
+    joint_limits = chain.get_joint_limits()
     jl_low = joint_limits[:, 0][tf.newaxis]
     jl_high = joint_limits[:, 1][tf.newaxis]
     low_error = tf.math.maximum(jl_low - q, 0)
@@ -132,6 +132,7 @@ class HdtIK:
         self.optimizer.apply_gradients(grads_and_vars=zip(gradients, [q]))
         return loss, gradients, viz_info
 
+    # @tf.function
     def step(self, q, env_points, left_target_pose, right_target_pose):
         left_q = tf.gather(q, self.left_idx, axis=1)
         left_xs = self.left.fk(left_q)
@@ -251,11 +252,11 @@ def main():
     urdf_filename = pathlib.Path("/home/peter/catkin_ws/src/hdt_robot/hdt_michigan_description/urdf/hdt_michigan.urdf")
     ik_solver = HdtIK(urdf_filename, max_iters=500)
 
-    batch_size = 1
+    batch_size = 100
     viz = True
 
-    left_target_pose = tf.tile(target(-0.3, 0.6, -0.5, 0, -pi / 2, -pi / 2), [batch_size, 1])
-    right_target_pose = tf.tile(target(0.3, 0.6, -0.4, -pi / 2, -pi / 2, 0), [batch_size, 1])
+    left_target_pose = tf.tile(target(-0.3, 0.6, 0.0, 0, -pi / 2, -pi / 2), [batch_size, 1])
+    right_target_pose = tf.tile(target(0.3, 0.6, 0.0, -pi / 2, -pi / 2, 0), [batch_size, 1])
     env_points = tf.random.uniform([batch_size, 10, 3], -1, 1, dtype=tf.float32)
 
     initial_value = tf.zeros([batch_size, ik_solver.get_num_joints()], dtype=tf.float32)

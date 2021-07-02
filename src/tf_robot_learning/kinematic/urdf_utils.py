@@ -16,9 +16,9 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with tf_robot_learning. If not, see <http://www.gnu.org/licenses/>.
+from typing import Optional
 
 import tensorflow as tf
-import trimesh
 
 from tf.transformations import euler_matrix
 from tf_robot_learning.kinematic.chain import Chain
@@ -26,10 +26,11 @@ from tf_robot_learning.kinematic.frame import Frame
 from tf_robot_learning.kinematic.joint import JointType, Joint, Link
 from tf_robot_learning.kinematic.segment import Segment
 from tf_robot_learning.kinematic.utils.import_pykdl import *
+from urdf_parser_py import urdf
 from urdf_parser_py.urdf import URDF
 
 
-def urdf_pose_to_tk_frame(pose):
+def urdf_pose_to_tk_frame(pose: Optional[urdf.Pose]):
     pos = [0., 0., 0.]
     rot = [0., 0., 0.]
 
@@ -44,7 +45,8 @@ def urdf_pose_to_tk_frame(pose):
                  batch_shape=1)
 
 
-def urdf_joint_to_tk_joint(jnt):
+def urdf_joint_to_tk_joint(jnt: urdf.Joint):
+    """ tk means 'tensorflow kinematics' """
     origin_frame = urdf_pose_to_tk_frame(jnt.origin)
 
     if jnt.joint_type == 'revolute':
@@ -55,10 +57,10 @@ def urdf_joint_to_tk_joint(jnt):
     if jnt.joint_type == 'fixed' or jnt.joint_type == 'prismatic':
         return Joint(JointType.NoneT, name=jnt.name), origin_frame
 
-    print("Unknown joint type: %s." % jnt.joint_type)
+    raise NotImplementedError("Unknown joint type: %s." % jnt.joint_type)
 
 
-def urdf_link_to_tk_link(lnk):
+def urdf_link_to_tk_link(lnk: urdf.Link):
     if lnk.inertial is not None and lnk.inertial.origin is not None:
         return Link(frame=urdf_pose_to_tk_frame(lnk.inertial.origin), mass=lnk.inertial.mass)
     else:
@@ -90,14 +92,11 @@ def tk_tree_from_urdf_model(urdf):
     return tree
 
 
-def kdl_chain_from_urdf_model(urdf, root=None, tip=None,
-                              load_collision=False, mesh_path=None):
-    if mesh_path is not None and mesh_path[-1] != '/': mesh_path += '/'
-
+def kdl_chain_from_urdf_model(urdf, root=None, tip=None):
     root = urdf.get_root() if root is None else root
     segments = []
 
-    chain = None if tip is None else urdf.get_chain(root, tip)[1:]
+    chain = None if tip is None else urdf.get_chain(root, tip)[1:]  # A list of strings
 
     def add_children_to_chain(parent, segments, chain=None):
         if parent in urdf.child_map:
@@ -114,16 +113,13 @@ def kdl_chain_from_urdf_model(urdf, root=None, tip=None,
                 joint, child_name = urdf.child_map[parent][0]
 
             for jidx, jnt in enumerate(urdf.joints):
-                if jnt.name == joint and jnt.joint_type in ['revolute', 'fixed', 'prismatic']:
-                    tk_jnt, _ = urdf_joint_to_tk_joint(urdf.joints[jidx])
-                    tk_origin = urdf_pose_to_tk_frame(urdf.joints[jidx].origin)
+                if jnt.name == joint:
+                    if jnt.joint_type not in ['revolute', 'fixed', 'prismatic']:
+                        raise NotImplementedError(f'Unsupported joint {jnt.name} of type {jnt.joint_type}')
+
+                    tk_jnt, tk_origin = urdf_joint_to_tk_joint(jnt)
 
                     tk_lnk = urdf_link_to_tk_link(urdf.link_map[child_name])
-
-                    if load_collision and urdf.link_map[child_name].collision is not None:
-                        filename = mesh_path + urdf.link_map[child_name].collision.geometry.filename.split('/')[-1]
-
-                        tk_lnk.collision_mesh = trimesh.load(filename)
 
                     segments += [Segment(joint=tk_jnt, f_tip=tk_origin, child_name=child_name, link=tk_lnk)]
 
