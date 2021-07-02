@@ -46,7 +46,7 @@ def return_frame(p, layout=FkLayout.xm):
     """
     Return a frame or list of frame in the desired layout
 
-    :param p: 		tf_kdl.Frame or list of [tf_kdl.Frame]
+    :param p: 		Frame
     :param layout:	FkLayout
     :return:
     """

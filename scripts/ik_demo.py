@@ -17,7 +17,8 @@ from moveit_msgs.msg import DisplayRobotState
 from sensor_msgs.msg import JointState
 from tf.transformations import quaternion_from_euler
 from tf_robot_learning.kinematic.chain import Chain
-from tf_robot_learning.kinematic.urdf_utils import urdf_from_file, kdl_chain_from_urdf_model
+from tf_robot_learning.kinematic.urdf_utils import urdf_from_file, urdf_to_chain, SUPPORTED_JOINT_TYPES, \
+    SUPPORTED_ACTUATED_JOINT_TYPES
 from visualization_msgs.msg import Marker
 
 
@@ -75,13 +76,14 @@ class HdtIK:
     def __init__(self, urdf_filename: pathlib.Path, max_iters: int = 5000):
         self.urdf = urdf_from_file(urdf_filename.as_posix())
 
-        self.left = kdl_chain_from_urdf_model(self.urdf, tip='left_tool')
-        self.right = kdl_chain_from_urdf_model(self.urdf, tip='right_tool')
+        self.left = urdf_to_chain(self.urdf, tip='left_tool')
+        self.right = urdf_to_chain(self.urdf, tip='right_tool')
 
-        self.joint_names = list(set(self.left.actuated_joint_names() + self.right.actuated_joint_names()))
-        self.n_joints = len(self.joint_names)
-        self.left_idx = [self.joint_names.index(jn) for jn in self.left.actuated_joint_names()]
-        self.right_idx = [self.joint_names.index(jn) for jn in self.right.actuated_joint_names()]
+        self.actuated_joint_names = list([j.name for j in self.urdf.joints if j.type in SUPPORTED_ACTUATED_JOINT_TYPES])
+        self.n_actuated_joints = len(self.actuated_joint_names)
+
+        self.left_idx = [self.actuated_joint_names.index(jn) for jn in self.left.actuated_joint_names()]
+        self.right_idx = [self.actuated_joint_names.index(jn) for jn in self.right.actuated_joint_names()]
 
         self.robot_info = RobotVoxelgridInfo(joint_positions_key='!!!')
 
@@ -116,7 +118,7 @@ class HdtIK:
                 break
 
             if viz:
-                self.viz_func(left_target_pose, right_target_pose, viz_info)
+                self.viz_func(left_target_pose, right_target_pose, q, viz_info)
 
         return q, converged
 
@@ -146,27 +148,29 @@ class HdtIK:
         # # FIXME: fix the FK code to handle trees better, to avoid duplicating the computation
         # #  and so that we can get the gripper links when we call FK.
         # #  run depth-first iteration accumulating matrix products?
-        # # collision_loss = self.compute_collision_loss(left_xs, right_xs, env_points)
-        # # compute robot points given q
-        # link_transforms = {}
-        # for left_link_i, left_link in enumerate(self.left.segments):
-        # left_link_x = left_xs[:, left_link_i + 1]
-        # link_transforms[left_link.child_name] = left_link_x
-        # for right_link_i, right_link in enumerate(self.right.segments):
-        # right_link_x = right_xs[:, right_link_i + 1]
-        # link_transforms[right_link.child_name] = right_link_x
-        # link_to_robot_transforms = []
-        # for link_name in self.robot_info.link_names:
-        # link_to_robot_transform = link_transforms[link_name]
-        # link_to_robot_transforms.append(link_to_robot_transform)
-        # # [b, n_links, 4, 4, 1], links/order based on robot_info
-        # link_to_robot_transforms = tf.stack(link_to_robot_transforms, axis=0)
-        # links_to_robot_transform_batch = tf.repeat(link_to_robot_transforms, self.robot_info.points_per_links, axis=1)
-        # batch_size = q.shape[0]
-        # points_link_frame_homo_batch = repeat_tensor(self.robot_info.points_link_frame, batch_size, 0, True)
-        # points_robot_frame_homo_batch = tf.matmul(links_to_robot_transform_batch, points_link_frame_homo_batch)
-        # points_robot_frame_batch = points_robot_frame_homo_batch[:, :, :3, 0]
-        # # compute the distance matrix between robot points and the environment points
+        def _compute_collision_loss():
+            # # collision_loss = self.compute_collision_loss(left_xs, right_xs, env_points)
+            # # compute robot points given q
+            # link_transforms = {}
+            # for left_link_i, left_link in enumerate(self.left.segments):
+            # left_link_x = left_xs[:, left_link_i + 1]
+            # link_transforms[left_link.child_name] = left_link_x
+            # for right_link_i, right_link in enumerate(self.right.segments):
+            # right_link_x = right_xs[:, right_link_i + 1]
+            # link_transforms[right_link.child_name] = right_link_x
+            # link_to_robot_transforms = []
+            # for link_name in self.robot_info.link_names:
+            # link_to_robot_transform = link_transforms[link_name]
+            # link_to_robot_transforms.append(link_to_robot_transform)
+            # # [b, n_links, 4, 4, 1], links/order based on robot_info
+            # link_to_robot_transforms = tf.stack(link_to_robot_transforms, axis=0)
+            # links_to_robot_transform_batch = tf.repeat(link_to_robot_transforms, self.robot_info.points_per_links, axis=1)
+            # batch_size = q.shape[0]
+            # points_link_frame_homo_batch = repeat_tensor(self.robot_info.points_link_frame, batch_size, 0, True)
+            # points_robot_frame_homo_batch = tf.matmul(links_to_robot_transform_batch, points_link_frame_homo_batch)
+            # points_robot_frame_batch = points_robot_frame_homo_batch[:, :, :3, 0]
+            # # compute the distance matrix between robot points and the environment points
+            pass
 
         losses = [
             left_pose_loss,
@@ -189,7 +193,7 @@ class HdtIK:
         pose_loss = self.theta * pos_error + (1 - self.theta) * rot_error
         return pose_loss
 
-    def viz_func(self, left_target_pose, right_target_pose, viz_info):
+    def viz_func(self, left_target_pose, right_target_pose, q, viz_info):
         left_xs, right_xs, left_q, right_q = viz_info
         b = 0
         self.tf2.send_transform(left_target_pose[b, :3].numpy().tolist(),
@@ -202,9 +206,7 @@ class HdtIK:
         positions = tf.concat([left_xs[b, :, :3], right_xs[b, :, :3]], axis=0)
 
         robot_state_dict = {}
-        for name, position in zip(self.left.actuated_joint_names(), left_q[b].numpy().tolist()):
-            robot_state_dict[name] = position
-        for name, position in zip(self.right.actuated_joint_names(), right_q[b].numpy().tolist()):
+        for name, position in zip(self.actuated_joint_names, q[b].numpy().tolist()):
             robot_state_dict[name] = position
 
         robot = DisplayRobotState()
@@ -234,10 +236,10 @@ class HdtIK:
         self.point_pub.publish(msg)
 
     def get_joint_names(self):
-        return self.joint_names
+        return self.actuated_joint_names
 
     def get_num_joints(self):
-        return self.n_joints
+        return self.n_actuated_joints
 
 
 def main():
@@ -252,11 +254,11 @@ def main():
     urdf_filename = pathlib.Path("/home/peter/catkin_ws/src/hdt_robot/hdt_michigan_description/urdf/hdt_michigan.urdf")
     ik_solver = HdtIK(urdf_filename, max_iters=500)
 
-    batch_size = 100
+    batch_size = 32
     viz = True
 
-    left_target_pose = tf.tile(target(-0.3, 0.6, 0.0, 0, -pi / 2, -pi / 2), [batch_size, 1])
-    right_target_pose = tf.tile(target(0.3, 0.6, 0.0, -pi / 2, -pi / 2, 0), [batch_size, 1])
+    left_target_pose = tf.tile(target(-0.3, 0.6, 0.2, 0, -pi / 2, -pi / 2), [batch_size, 1])
+    right_target_pose = tf.tile(target(0.3, 0.6, 0.2, -pi / 2, -pi / 2, 0), [batch_size, 1])
     env_points = tf.random.uniform([batch_size, 10, 3], -1, 1, dtype=tf.float32)
 
     initial_value = tf.zeros([batch_size, ik_solver.get_num_joints()], dtype=tf.float32)

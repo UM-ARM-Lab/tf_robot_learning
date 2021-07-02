@@ -18,7 +18,6 @@
 # along with tf_robot_learning. If not, see <http://www.gnu.org/licenses/>.
 
 import tensorflow as tf
-import transformations
 
 from tf_robot_learning.kinematic.utils.layout import FkLayout
 from tf_robot_learning.kinematic.utils.tf_utils import angular_vel_tensor, matmatmul, matvecmul
@@ -32,7 +31,7 @@ class Rotation(tf.Tensor):
         return self.shape.ndims == 3
 
 
-class Twist(object):
+class Twist:
     def __init__(self, dx=tf.zeros(6)):
         self.dx = dx
 
@@ -113,7 +112,7 @@ class Twist(object):
                 return Twist(tf.concat([vel, rot], 0))
 
 
-class Frame(object):
+class Frame:
     def __init__(self, p=None, m=None, batch_shape=None):
         """
         :param p:

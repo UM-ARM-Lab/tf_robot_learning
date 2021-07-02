@@ -25,9 +25,11 @@ from tf_robot_learning.kinematic.chain import Chain
 from tf_robot_learning.kinematic.frame import Frame
 from tf_robot_learning.kinematic.joint import JointType, Joint, Link
 from tf_robot_learning.kinematic.segment import Segment
-from tf_robot_learning.kinematic.utils.import_pykdl import *
 from urdf_parser_py import urdf
 from urdf_parser_py.urdf import URDF
+
+SUPPORTED_JOINT_TYPES = ['revolute', 'fixed', 'prismatic']
+SUPPORTED_ACTUATED_JOINT_TYPES = ['revolute', 'prismatic']
 
 
 def urdf_pose_to_tk_frame(pose: Optional[urdf.Pose]):
@@ -67,32 +69,7 @@ def urdf_link_to_tk_link(lnk: urdf.Link):
         return Link(frame=urdf_pose_to_tk_frame(None), mass=1.)
 
 
-def tk_tree_from_urdf_model(urdf):
-    root = urdf.get_root()
-    tree = kdl.Tree(root)
-
-    def add_children_to_tree(parent):
-        if parent in urdf.child_map:
-            for joint, child_name in urdf.child_map[parent]:
-                for lidx, link in enumerate(urdf.links):
-                    if child_name == link.name:
-                        for jidx, jnt in enumerate(urdf.joints):
-                            if jnt.name == joint:
-                                tk_jnt, tk_origin = urdf_joint_to_tk_joint(urdf.joints[jidx])
-                                tk_origin = urdf_pose_to_tk_frame(urdf.joints[jidx].origin)
-
-                                # kdl_sgm = kdl.Segment(name=,
-                                #             joint=tk_jnt,
-                                #             f_tip=tk_origin,
-                                #             child_name=child_name)
-                                tree.addSegment(kdl_sgm, parent)
-                                add_children_to_tree(child_name)
-
-    add_children_to_tree(root)
-    return tree
-
-
-def kdl_chain_from_urdf_model(urdf, root=None, tip=None):
+def urdf_to_chain(urdf, root=None, tip=None):
     root = urdf.get_root() if root is None else root
     segments = []
 
@@ -114,7 +91,7 @@ def kdl_chain_from_urdf_model(urdf, root=None, tip=None):
 
             for jidx, jnt in enumerate(urdf.joints):
                 if jnt.name == joint:
-                    if jnt.joint_type not in ['revolute', 'fixed', 'prismatic']:
+                    if jnt.joint_type not in SUPPORTED_JOINT_TYPES:
                         raise NotImplementedError(f'Unsupported joint {jnt.name} of type {jnt.joint_type}')
 
                     tk_jnt, tk_origin = urdf_joint_to_tk_joint(jnt)
