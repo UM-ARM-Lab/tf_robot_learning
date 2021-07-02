@@ -89,19 +89,17 @@ class Chain:
 
         batch_size = q.shape[0]
 
-        p = [Frame(batch_shape=batch_size)]
-
-        j = 0  # joint index. for fixed joint don't increment this
+        p = [Frame(batch_shape=batch_size)]  # could use this to represent transform from robot to world
 
         for segment in self.segments:
             if segment.joint.type is not JointType.NoneT:
+                j = self.actuated_joint_names().index(segment.joint.name)
                 if isinstance(q, list) or q.shape.ndims == 1:
                     p.append(p[-1] * segment.pose(q[j], batch_size))
                 elif q.shape.ndims == 2:
                     p.append(p[-1] * segment.pose(q[:, j], batch_size))
                 else:
                     raise NotImplementedError()
-                j += 1
             else:
                 p.append(p[-1] * segment.pose(tf.zeros([1]), 1))
 
