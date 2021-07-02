@@ -17,35 +17,16 @@
 # You should have received a copy of the GNU General Public License
 # along with tf_robot_learning. If not, see <http://www.gnu.org/licenses/>.
 
-import numpy as np
 import tensorflow as tf
+import trimesh
 
+from tf.transformations import euler_matrix
 from tf_robot_learning.kinematic.chain import Chain
 from tf_robot_learning.kinematic.frame import Frame
 from tf_robot_learning.kinematic.joint import JointType, Joint, Link
 from tf_robot_learning.kinematic.segment import Segment
 from tf_robot_learning.kinematic.utils.import_pykdl import *
 from urdf_parser_py.urdf import URDF
-
-
-def euler_to_quat(r, p, y):
-    sr, sp, sy = np.sin(r / 2.0), np.sin(p / 2.0), np.sin(y / 2.0)
-    cr, cp, cy = np.cos(r / 2.0), np.cos(p / 2.0), np.cos(y / 2.0)
-    return [sr * cp * cy - cr * sp * sy,
-            cr * sp * cy + sr * cp * sy,
-            cr * cp * sy - sr * sp * cy,
-            cr * cp * cy + sr * sp * sy]
-
-
-def quat_to_rot(q):
-    x, y, z, w = q
-
-    r = np.array([
-        [1. - 2. * (y ** 2 + z ** 2), 2 * (x * y - z * w), 2 * (x * z + y * w)],
-        [2 * (x * y + z * w), 1. - 2. * (x ** 2 + z ** 2), 2 * (y * z - x * w)],
-        [2 * (x * z - y * w), 2 * (y * z + x * w), 1. - 2. * (y ** 2 + x ** 2)]
-    ])
-    return r
 
 
 def urdf_pose_to_tk_frame(pose):
@@ -59,7 +40,7 @@ def urdf_pose_to_tk_frame(pose):
             rot = pose.rotation
 
     return Frame(p=tf.constant([pos], dtype=tf.float32),
-                 m=tf.constant([quat_to_rot(euler_to_quat(*rot))], dtype=tf.float32),
+                 m=tf.constant([euler_matrix(*rot)[:3, :3]], dtype=tf.float32),
                  batch_shape=1)
 
 
@@ -140,7 +121,6 @@ def kdl_chain_from_urdf_model(urdf, root=None, tip=None,
                     tk_lnk = urdf_link_to_tk_link(urdf.link_map[child_name])
 
                     if load_collision and urdf.link_map[child_name].collision is not None:
-                        import trimesh
                         filename = mesh_path + urdf.link_map[child_name].collision.geometry.filename.split('/')[-1]
 
                         tk_lnk.collision_mesh = trimesh.load(filename)

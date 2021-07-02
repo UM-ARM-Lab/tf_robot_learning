@@ -11,13 +11,13 @@ import urdf_parser_py.xml_reflection.core
 from arc_utilities.ros_helpers import get_connected_publisher
 from arc_utilities.tf2wrapper import TF2Wrapper
 from geometry_msgs.msg import Point
+from link_bot_classifiers.robot_points import RobotVoxelgridInfo
 from moonshine.simple_profiler import SimpleProfiler
 from moveit_msgs.msg import DisplayRobotState
 from sensor_msgs.msg import JointState
 from tf.transformations import quaternion_from_euler
 from tf_robot_learning.kinematic.chain import Chain
 from tf_robot_learning.kinematic.urdf_utils import urdf_from_file, kdl_chain_from_urdf_model
-from tf_robot_learning.kinematic.utils.layout import FkLayout
 from visualization_msgs.msg import Marker
 
 
@@ -43,9 +43,7 @@ def orientation_error_mat2(r1, r2):
     return tf.linalg.norm(log, ord='fro', axis=[-2, -1])
 
 
-@tf.function
-def compute_pose_loss(chain, q, target_pose):
-    xs = chain.xs(q, layout=FkLayout.xm)
+def compute_pose_loss(xs, target_pose):
     position = xs[:, -1, :3]
     orientation = tf.reshape(xs[:, -1, 3:], [-1, 3, 3])
     target_position = target_pose[:, :3]
@@ -54,10 +52,9 @@ def compute_pose_loss(chain, q, target_pose):
     _orientation_error = orientation_error_mat(target_orientation, orientation)
     position_error = tf.reduce_sum(tf.square(position - target_position), axis=-1)
 
-    return xs, position_error, _orientation_error
+    return position_error, _orientation_error
 
 
-# @tf.function
 def compute_jl_loss(chain: Chain, q):
     joint_limits = chain.joint_limits
     jl_low = joint_limits[:, 0][tf.newaxis]
@@ -75,7 +72,7 @@ def target(x, y, z, roll, pitch, yaw):
 
 class HdtIK:
 
-    def __init__(self, urdf_filename: pathlib.Path):
+    def __init__(self, urdf_filename: pathlib.Path, max_iters: int = 5000):
         self.urdf = urdf_from_file(urdf_filename.as_posix())
 
         self.left = kdl_chain_from_urdf_model(self.urdf, tip='left_tool')
@@ -86,6 +83,9 @@ class HdtIK:
         self.left_idx = [self.joint_names.index(jn) for jn in self.left.actuated_joint_names()]
         self.right_idx = [self.joint_names.index(jn) for jn in self.right.actuated_joint_names()]
 
+        self.robot_info = RobotVoxelgridInfo(joint_positions_key='!!!')
+
+        self.max_iters = max_iters
         self.theta = 0.995
         self.jl_alpha = 0.1
         self.initial_lr = 0.01
@@ -100,15 +100,17 @@ class HdtIK:
         self.joint_states_viz_pub = get_connected_publisher("joint_states_viz", JointState, queue_size=10)
         self.tf2 = TF2Wrapper()
 
-    def solve(self, left_target_pose, right_target_pose, initial_value=None, viz=False):
+        self.p = SimpleProfiler()
+
+    def solve(self, env_points, left_target_pose, right_target_pose, initial_value=None, viz=False):
         if initial_value is None:
             batch_size = left_target_pose.shape[0]
             initial_value = tf.zeros([batch_size, self.n_joints], dtype=tf.float32)
-        q = tf.Variable(tf.identity(initial_value))
+        q = tf.Variable(initial_value)
 
         converged = False
-        for _ in trange(5000):
-            loss, gradients, viz_info = self.opt(q, left_target_pose, right_target_pose)
+        for _ in trange(self.max_iters):
+            loss, gradients, viz_info = self.opt(q, env_points, left_target_pose, right_target_pose)
             if loss < self.loss_threshold:
                 converged = True
                 break
@@ -118,21 +120,61 @@ class HdtIK:
 
         return q, converged
 
-    def opt(self, q, left_target_pose, right_target_pose):
-        with tf.GradientTape(persistent=True) as tape:
-            loss, viz_info = self.step(q, left_target_pose, right_target_pose)
+    def print_stats(self):
+        print(self.p)
+
+    def opt(self, q, env_points, left_target_pose, right_target_pose):
+        with tf.GradientTape() as tape:
+            self.p.start()
+            loss, viz_info = self.step(q, env_points, left_target_pose, right_target_pose)
+            self.p.stop()
         gradients = tape.gradient([loss], [q])
         self.optimizer.apply_gradients(grads_and_vars=zip(gradients, [q]))
         return loss, gradients, viz_info
 
-    def step(self, q, left_target_pose, right_target_pose):
+    def step(self, q, env_points, left_target_pose, right_target_pose):
         left_q = tf.gather(q, self.left_idx, axis=1)
-        left_pose_loss, left_xs = self.compute_pose_loss(self.left, left_q, left_target_pose)
+        left_xs = self.left.fk(left_q)
+        left_pose_loss = self.compute_pose_loss(left_xs, left_target_pose)
         left_jl_loss = self.compute_jl_loss(self.left, left_q)
         right_q = tf.gather(q, self.right_idx, axis=1)
-        right_pose_loss, right_xs = self.compute_pose_loss(self.right, right_q, right_target_pose)
+        right_xs = self.right.fk(right_q)
+        right_pose_loss = self.compute_pose_loss(right_xs, right_target_pose)
         right_jl_loss = self.compute_jl_loss(self.right, right_q)
-        loss = tf.reduce_mean(tf.math.add_n([left_pose_loss, right_pose_loss, left_jl_loss, right_jl_loss]))
+
+        # # FIXME: fix the FK code to handle trees better, to avoid duplicating the computation
+        # #  and so that we can get the gripper links when we call FK.
+        # #  run depth-first iteration accumulating matrix products?
+        # # collision_loss = self.compute_collision_loss(left_xs, right_xs, env_points)
+        # # compute robot points given q
+        # link_transforms = {}
+        # for left_link_i, left_link in enumerate(self.left.segments):
+        # left_link_x = left_xs[:, left_link_i + 1]
+        # link_transforms[left_link.child_name] = left_link_x
+        # for right_link_i, right_link in enumerate(self.right.segments):
+        # right_link_x = right_xs[:, right_link_i + 1]
+        # link_transforms[right_link.child_name] = right_link_x
+        # link_to_robot_transforms = []
+        # for link_name in self.robot_info.link_names:
+        # link_to_robot_transform = link_transforms[link_name]
+        # link_to_robot_transforms.append(link_to_robot_transform)
+        # # [b, n_links, 4, 4, 1], links/order based on robot_info
+        # link_to_robot_transforms = tf.stack(link_to_robot_transforms, axis=0)
+        # links_to_robot_transform_batch = tf.repeat(link_to_robot_transforms, self.robot_info.points_per_links, axis=1)
+        # batch_size = q.shape[0]
+        # points_link_frame_homo_batch = repeat_tensor(self.robot_info.points_link_frame, batch_size, 0, True)
+        # points_robot_frame_homo_batch = tf.matmul(links_to_robot_transform_batch, points_link_frame_homo_batch)
+        # points_robot_frame_batch = points_robot_frame_homo_batch[:, :, :3, 0]
+        # # compute the distance matrix between robot points and the environment points
+
+        losses = [
+            left_pose_loss,
+            right_pose_loss,
+            left_jl_loss,
+            right_jl_loss,
+            # collision_loss,
+        ]
+        loss = tf.reduce_mean(tf.math.add_n(losses))
 
         viz_info = [left_xs, right_xs, left_q, right_q]
 
@@ -141,10 +183,10 @@ class HdtIK:
     def compute_jl_loss(self, chain: Chain, q):
         return self.jl_alpha * compute_jl_loss(chain, q)
 
-    def compute_pose_loss(self, chain: Chain, q, target_pose):
-        xs, pos_error, rot_error = compute_pose_loss(chain, q, target_pose)
+    def compute_pose_loss(self, xs, target_pose):
+        pos_error, rot_error = compute_pose_loss(xs, target_pose)
         pose_loss = self.theta * pos_error + (1 - self.theta) * rot_error
-        return pose_loss, xs
+        return pose_loss
 
     def viz_func(self, left_target_pose, right_target_pose, viz_info):
         left_xs, right_xs, left_q, right_q = viz_info
@@ -207,23 +249,24 @@ def main():
     urdf_parser_py.xml_reflection.core.on_error = _on_error
 
     urdf_filename = pathlib.Path("/home/peter/catkin_ws/src/hdt_robot/hdt_michigan_description/urdf/hdt_michigan.urdf")
-    ik_solver = HdtIK(urdf_filename)
+    ik_solver = HdtIK(urdf_filename, max_iters=500)
 
     batch_size = 1
     viz = True
 
-    def _solve():
-        left_target_pose = tf.tile(target(-0.3, 0.6, -0.5, 0, -pi / 2, -pi / 2), [batch_size, 1])
-        right_target_pose = tf.tile(target(0.3, 0.6, -0.4, -pi / 2, -pi / 2, 0), [batch_size, 1])
+    left_target_pose = tf.tile(target(-0.3, 0.6, -0.5, 0, -pi / 2, -pi / 2), [batch_size, 1])
+    right_target_pose = tf.tile(target(0.3, 0.6, -0.4, -pi / 2, -pi / 2, 0), [batch_size, 1])
+    env_points = tf.random.uniform([batch_size, 10, 3], -1, 1, dtype=tf.float32)
 
-        initial_value = tf.zeros([batch_size, ik_solver.get_num_joints()], dtype=tf.float32)
-        q, converged = ik_solver.solve(left_target_pose, right_target_pose, viz=viz, initial_value=initial_value)
-        ik_solver.get_joint_names()
-        print(f'{converged=}')
-
-    # p = SimpleProfiler()
-    # print(p.profile(1, _solve, skip_fisrt_n=0))
-    _solve()
+    initial_value = tf.zeros([batch_size, ik_solver.get_num_joints()], dtype=tf.float32)
+    q, converged = ik_solver.solve(env_points=env_points,
+                                   left_target_pose=left_target_pose,
+                                   right_target_pose=right_target_pose,
+                                   viz=viz,
+                                   initial_value=initial_value)
+    ik_solver.get_joint_names()
+    print(f'{converged=}')
+    ik_solver.print_stats()
 
 
 if __name__ == '__main__':
