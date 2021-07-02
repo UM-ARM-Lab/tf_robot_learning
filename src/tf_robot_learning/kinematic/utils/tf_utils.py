@@ -30,9 +30,6 @@ def matvecmul(mat, vec):
     return tf.linalg.LinearOperatorFullMatrix(mat).matvec(vec)
 
 
-r
-
-
 def matmatmul(mat1, mat2):
     """
     Matrix-matrix multiplication

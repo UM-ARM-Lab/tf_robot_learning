@@ -20,9 +20,10 @@
 from enum import IntEnum
 
 import numpy as np
+import tensorflow as tf
 
 from tf_robot_learning.kinematic.frame import Frame, Twist
-from tf_robot_learning.kinematic.rotation import *
+from tf_robot_learning.kinematic.rotation import rot_2, rot_x, rot_y, rot_z, twist_x, twist_y, twist_z, twist_2
 
 
 class JointType(IntEnum):
@@ -34,8 +35,8 @@ class JointType(IntEnum):
 
 
 class Joint:
-    def __init__(self, type, origin=None, axis=None, name='', limits=None):
-        self.type = type
+    def __init__(self, joint_type, origin=None, axis=None, name='', limits=None):
+        self.type = joint_type
         self.name = name
 
         if limits is not None:
@@ -95,7 +96,7 @@ class Mesh:
         :return:
         """
         # sample triangle proportional to surface
-        idx = tf.random.categorical(tf.log(self._area_faces)[None], size)[0]
+        idx = tf.random.categorical(tf.math.log(self._area_faces)[None], size)[0]
 
         triangles_samples = tf.gather(
             self._triangles,
@@ -103,14 +104,14 @@ class Mesh:
         )
 
         # sample on triangle tf.reduce_sum(tf.transpose(vs)[:, :, None] * triangles_samples, axis=1)
-        r0, r1 = tf.random_uniform((size,), 0., 1.), tf.random_uniform((size,), 0., 1.)
+        r0, r1 = tf.random.uniform((size,), 0., 1.), tf.random.uniform((size,), 0., 1.)
 
         vs = tf.stack([1. - r0 ** 0.5, r0 ** 0.5 * (1. - r1), r1 * r0 ** 0.5])
         return tf.reduce_sum(tf.transpose(vs)[:, :, None] * triangles_samples, axis=1)
 
     def sample_face(self, size=10):
         return tf.gather(self._vertices,
-                         tf.random_uniform((size,), 0, self._nb_vertices - 1, dtype=tf.int64))
+                         tf.random.uniform((size,), 0, self._nb_vertices - 1, dtype=tf.int64))
 
 
 class Link:
