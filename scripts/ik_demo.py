@@ -17,8 +17,8 @@ from moveit_msgs.msg import DisplayRobotState
 from sensor_msgs.msg import JointState
 from tf.transformations import quaternion_from_euler
 from tf_robot_learning.kinematic.chain import Chain
-from tf_robot_learning.kinematic.urdf_utils import urdf_from_file, urdf_to_chain, SUPPORTED_JOINT_TYPES, \
-    SUPPORTED_ACTUATED_JOINT_TYPES
+from tf_robot_learning.kinematic.urdf_utils import urdf_from_file, urdf_to_chain
+from tf_robot_learning.kinematic.joint import SUPPORTED_JOINT_TYPES, SUPPORTED_ACTUATED_JOINT_TYPES
 from visualization_msgs.msg import Marker
 
 

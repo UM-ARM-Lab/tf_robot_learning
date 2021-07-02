@@ -130,3 +130,7 @@ class Link:
 
     def pose(self):
         return self.frame
+
+
+SUPPORTED_JOINT_TYPES = ['revolute', 'fixed', 'prismatic']
+SUPPORTED_ACTUATED_JOINT_TYPES = ['revolute', 'prismatic']

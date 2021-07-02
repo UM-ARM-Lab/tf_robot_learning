@@ -30,17 +30,8 @@ def matvecmul(mat, vec):
     return tf.linalg.LinearOperatorFullMatrix(mat).matvec(vec)
 
 
-#
-# if mat.shape.ndims == 2 and vec.shape.ndims == 1:
-# 	return tf.einsum('ij,j->i', mat, vec)
-# elif mat.shape.ndims == 2 and vec.shape.ndims == 2:
-# 	return tf.einsum('ij,aj->ai', mat, vec)
-# elif mat.shape.ndims == 3 and vec.shape.ndims == 1:
-# 	return tf.einsum('aij,j->ai', mat, vec)
-# elif mat.shape.ndims == 3 and vec.shape.ndims == 2:
-# 	return tf.einsum('aij,aj->ai', mat, vec)
-# else:
-# 	raise NotImplementedError
+r
+
 
 def matmatmul(mat1, mat2):
     """
@@ -51,17 +42,6 @@ def matmatmul(mat1, mat2):
     """
     return tf.linalg.LinearOperatorFullMatrix(mat1).matmul(mat2)
 
-
-# if mat1.shape.ndims == 2 and mat2.shape.ndims == 2:
-# 	return tf.matmul(mat1, mat2)
-# elif mat1.shape.ndims == 3 and mat2.shape.ndims == 2:
-# 	return tf.einsum('aij,jk->aik', mat1, mat2)
-# elif mat1.shape.ndims == 2 and mat2.shape.ndims == 3:
-# 	return tf.einsum('ij,ajk->aik', mat1, mat2)
-# elif mat1.shape.ndims == 3 and mat2.shape.ndims == 3:
-# 	return tf.einsum('aij,ajk->aik', mat1, mat2)
-# else:
-# 	raise NotImplementedError
 
 def angular_vel_tensor(w):
     if w.shape.ndims == 1:
@@ -87,8 +67,6 @@ def drotmat_to_w_jac(r):
     return tf.concat([
         tf.compat.v1.matrix_transpose(angular_vel_tensor(r[:, :, i])) for i in range(3)], axis=1)
 
-
-# return tf.concat([angular_vel_tensor(tf.matrix_transpose(r)[:, :, i]) for i in range(3)], axis=1)
 
 def rot_matrix_gains(r, k):
     """

@@ -23,13 +23,10 @@ import tensorflow as tf
 from tf.transformations import euler_matrix
 from tf_robot_learning.kinematic.chain import Chain
 from tf_robot_learning.kinematic.frame import Frame
-from tf_robot_learning.kinematic.joint import JointType, Joint, Link
+from tf_robot_learning.kinematic.joint import JointType, Joint, Link, SUPPORTED_JOINT_TYPES
 from tf_robot_learning.kinematic.segment import Segment
 from urdf_parser_py import urdf
 from urdf_parser_py.urdf import URDF
-
-SUPPORTED_JOINT_TYPES = ['revolute', 'fixed', 'prismatic']
-SUPPORTED_ACTUATED_JOINT_TYPES = ['revolute', 'prismatic']
 
 
 def urdf_pose_to_tk_frame(pose: Optional[urdf.Pose]):
