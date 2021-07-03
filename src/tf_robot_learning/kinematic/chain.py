@@ -84,12 +84,16 @@ class Chain:
         :param q:		[batch_size, nb_joint] or [nb_joint] or list of [batch_size] Joint angles
         :param layout: layout of frame
         :return:
+        output order is based on order of segments, which is constructed via DFS over the URDF
         """
         assert q.shape[1] == self.get_num_joints()
 
         batch_size = q.shape[0]
 
         p = [Frame(batch_shape=batch_size)]  # could use this to represent transform from robot to world
+
+        # DFS tree iteration here
+        # output order is based on order of segments
 
         for segment in self.segments:
             if segment.joint.type is not JointType.NoneT:

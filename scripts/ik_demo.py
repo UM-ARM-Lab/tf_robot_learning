@@ -99,7 +99,7 @@ class HdtIK:
 
         self.display_robot_state_pub = get_connected_publisher("display_robot_state", DisplayRobotState, queue_size=10)
         self.point_pub = get_connected_publisher("point", Marker, queue_size=10)
-        self.joint_states_viz_pub = get_connected_publisher("joint_states_viz", JointState, queue_size=10)
+        self.joint_states_viz_pub = rospy.Publisher("joint_states_viz", JointState, queue_size=10)
         self.tf2 = TF2Wrapper()
 
         self.p = SimpleProfiler()
@@ -134,7 +134,7 @@ class HdtIK:
         self.optimizer.apply_gradients(grads_and_vars=zip(gradients, [q]))
         return loss, gradients, viz_info
 
-    # @tf.function
+    @tf.function
     def step(self, q, env_points, left_target_pose, right_target_pose):
         left_q = tf.gather(q, self.left_idx, axis=1)
         left_xs = self.left.fk(left_q)
