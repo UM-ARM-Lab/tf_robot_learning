@@ -165,18 +165,18 @@ class HdtIK:
         left_pose_loss = self.compute_pose_loss(left_ee_pose, left_target_pose)
         right_pose_loss = self.compute_pose_loss(right_ee_pose, right_target_pose)
 
-        collision_loss, collision_viz_info = self.compute_collision_loss(poses, env_points)
+        # collision_loss, collision_viz_info = self.compute_collision_loss(poses, env_points)
 
         losses = [
             left_pose_loss,
             right_pose_loss,
             jl_loss,
-            collision_loss,
+            # collision_loss,
         ]
         loss = tf.reduce_mean(tf.math.add_n(losses))
 
         viz_info = [poses]
-        viz_info.extend(collision_viz_info)
+        # viz_info.extend(collision_viz_info)
 
         return loss, viz_info
 
@@ -281,10 +281,10 @@ def main():
     ik_solver = HdtIK(urdf_filename, max_iters=500)
 
     batch_size = 32
-    viz = False
+    viz = True
 
-    left_target_pose = tf.tile(target(-0.3, 0.6, 0.2, 0, -pi / 2, -pi / 2), [batch_size, 1])
-    right_target_pose = tf.tile(target(0.3, 0.6, 0.2, -pi / 2, -pi / 2, 0), [batch_size, 1])
+    left_target_pose = tf.tile(target(-0.2, 0.3, 0.2, 0, -pi / 4, -pi / 2), [batch_size, 1])
+    right_target_pose = tf.tile(target(0.4, 0.6, 0.4, -pi / 2, -pi / 4, pi/4), [batch_size, 1])
     env_points = tf.random.uniform([batch_size, 10, 3], -1, 1, dtype=tf.float32)
 
     initial_value = tf.zeros([batch_size, ik_solver.get_num_joints()], dtype=tf.float32)
