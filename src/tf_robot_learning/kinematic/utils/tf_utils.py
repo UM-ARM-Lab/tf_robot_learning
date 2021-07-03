@@ -53,34 +53,3 @@ def angular_vel_tensor(w):
                       [-w[:, 1], w[:, 0], di]]),
             perm=(2, 0, 1)
         )
-
-
-def drotmat_to_w_jac(r):
-    """
-
-    :param r: rotation matrix [:, 3, 3]
-    :return:
-    """
-    return tf.concat([
-        tf.compat.v1.matrix_transpose(angular_vel_tensor(r[:, :, i])) for i in range(3)], axis=1)
-
-
-def rot_matrix_gains(r, k):
-    """
-
-    r: rotation matrix [:, 3, 3]
-    k: rotation matrix [:, 6, 6]
-    :param r:
-    :return:
-    """
-
-    if k.shape.ndims == 2:
-        k = k[None] * tf.ones_like(r[:, :1, :1])
-
-    k_mat = tf.concat([
-        tf.concat([tf.eye(3, batch_shape=(1,)) + tf.zeros_like(k[:, :3, :3]),
-                   tf.zeros_like(k[:, :3, :3])], axis=2),
-        tf.concat([tf.zeros_like(k[:, :1, :3]) * tf.ones((1, 9, 1)),
-                   drotmat_to_w_jac(r)], axis=2)], 1)
-
-    return tf.linalg.matmul(k, k_mat, transpose_b=True)

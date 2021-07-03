@@ -61,9 +61,9 @@ def urdf_joint_to_tk_joint(jnt: urdf.Joint):
 
 def urdf_link_to_tk_link(lnk: urdf.Link):
     if lnk.inertial is not None and lnk.inertial.origin is not None:
-        return Link(frame=urdf_pose_to_tk_frame(lnk.inertial.origin), mass=lnk.inertial.mass)
+        return Link(frame=urdf_pose_to_tk_frame(lnk.inertial.origin))
     else:
-        return Link(frame=urdf_pose_to_tk_frame(None), mass=1.)
+        return Link(frame=urdf_pose_to_tk_frame(None))
 
 
 def urdf_to_tree(urdf):

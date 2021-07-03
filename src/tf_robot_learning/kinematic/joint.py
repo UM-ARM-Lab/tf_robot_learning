@@ -19,7 +19,6 @@
 
 from enum import IntEnum
 
-import numpy as np
 import tensorflow as tf
 
 from tf_robot_learning.kinematic.frame import Frame, Twist
@@ -77,57 +76,9 @@ class Joint:
             return Twist()
 
 
-class Mesh:
-    def __init__(self, mesh, dtype=tf.float32):
-        self._vertices = tf.convert_to_tensor(mesh.vertices, dtype=dtype)
-        self._nb_vertices = mesh.vertices.shape[0]
-
-        self._area_faces = tf.convert_to_tensor(mesh.area_faces, dtype=dtype)
-
-        triangles = np.copy(mesh.triangles)
-
-        self._triangles = tf.convert_to_tensor(triangles, dtype=dtype)
-        sample = self.sample(10)
-
-    def sample(self, size=10):
-        """
-        Random sample on surface
-        :param size:
-        :return:
-        """
-        # sample triangle proportional to surface
-        idx = tf.random.categorical(tf.math.log(self._area_faces)[None], size)[0]
-
-        triangles_samples = tf.gather(
-            self._triangles,
-            idx
-        )
-
-        # sample on triangle tf.reduce_sum(tf.transpose(vs)[:, :, None] * triangles_samples, axis=1)
-        r0, r1 = tf.random.uniform((size,), 0., 1.), tf.random.uniform((size,), 0., 1.)
-
-        vs = tf.stack([1. - r0 ** 0.5, r0 ** 0.5 * (1. - r1), r1 * r0 ** 0.5])
-        return tf.reduce_sum(tf.transpose(vs)[:, :, None] * triangles_samples, axis=1)
-
-    def sample_face(self, size=10):
-        return tf.gather(self._vertices,
-                         tf.random.uniform((size,), 0, self._nb_vertices - 1, dtype=tf.int64))
-
-
 class Link:
-    def __init__(self, frame, mass=1.0):
-        self.mass = mass
+    def __init__(self, frame):
         self.frame = frame
-
-        self._collision_mesh = None
-
-    @property
-    def collision_mesh(self):
-        return self._collision_mesh
-
-    @collision_mesh.setter
-    def collision_mesh(self, value):
-        self._collision_mesh = Mesh(value)
 
     def pose(self):
         return self.frame

@@ -106,18 +106,19 @@ class HdtIK:
         self.robot_info = RobotVoxelgridInfo(joint_positions_key='!!!')
 
         self.max_iters = max_iters
-        self.theta = 0.995
+        self.initial_lr = 0.05
+        self.theta = 0.992
         self.jl_alpha = 0.1
-        self.initial_lr = 0.01
         self.loss_threshold = 1e-4
         self.barrier_upper_lim = tf.square(0.06)  # stops repelling points from pushing after this distance
         self.barrier_scale = 0.05  # scales the gradients for the repelling points
         self.barrier_epsilon = 0.01
         self.log_cutoff = tf.math.log(self.barrier_scale * self.barrier_upper_lim + self.barrier_epsilon)
 
-        # lr = tf.keras.optimizers.schedules.ExponentialDecay(0.5, 20, 0.9)
+        lr = tf.keras.optimizers.schedules.ExponentialDecay(self.initial_lr, int(self.max_iters / 10), 0.9)
+        # lr = self.initial_lr
         # opt = tf.keras.optimizers.SGD(lr)
-        self.optimizer = tf.keras.optimizers.Adam(self.initial_lr, amsgrad=True)
+        self.optimizer = tf.keras.optimizers.Adam(lr, amsgrad=True)
 
         self.display_robot_state_pub = get_connected_publisher("display_robot_state", DisplayRobotState, queue_size=10)
         self.point_pub = get_connected_publisher("point", Marker, queue_size=10)
@@ -283,8 +284,8 @@ def main():
     batch_size = 32
     viz = True
 
-    left_target_pose = tf.tile(target(-0.2, 0.3, 0.2, 0, -pi / 4, -pi / 2), [batch_size, 1])
-    right_target_pose = tf.tile(target(0.4, 0.6, 0.4, -pi / 2, -pi / 4, pi/4), [batch_size, 1])
+    left_target_pose = tf.tile(target(-0.2, 0.3, 0.3, 0, -pi / 2, -pi / 2), [batch_size, 1])
+    right_target_pose = tf.tile(target(0.4, 0.6, 0.4, -pi / 2, -pi / 2, 0), [batch_size, 1])
     env_points = tf.random.uniform([batch_size, 10, 3], -1, 1, dtype=tf.float32)
 
     initial_value = tf.zeros([batch_size, ik_solver.get_num_joints()], dtype=tf.float32)
