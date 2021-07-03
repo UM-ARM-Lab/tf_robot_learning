@@ -143,6 +143,19 @@ class Frame:
         return self.m.shape.ndims == 3
 
     @property
+    def xm2(self):
+        """
+        4x4 transformation matrix
+        (order : 'C' - last index changing the first)
+        :return:
+        """
+        assert self.is_batch
+        b = self.m.shape[0]
+        m34 = tf.concat([self.p[:, :, None], self.m], axis=-1)
+        m44 = tf.concat([m34, tf.constant([[[0, 0, 0, 1]]]*b, dtype=tf.float32)], axis=-2)
+        return m44
+
+    @property
     def xm(self):
         """
         Position and vectorized rotation matrix

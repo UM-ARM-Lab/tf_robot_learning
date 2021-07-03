@@ -16,9 +16,9 @@ from moonshine.simple_profiler import SimpleProfiler
 from moveit_msgs.msg import DisplayRobotState
 from sensor_msgs.msg import JointState
 from tf.transformations import quaternion_from_euler
-from tf_robot_learning.kinematic.chain import Chain
-from tf_robot_learning.kinematic.urdf_utils import urdf_from_file, urdf_to_chain
-from tf_robot_learning.kinematic.joint import SUPPORTED_JOINT_TYPES, SUPPORTED_ACTUATED_JOINT_TYPES
+from tf_robot_learning.kinematic.joint import SUPPORTED_ACTUATED_JOINT_TYPES
+from tf_robot_learning.kinematic.tree import Tree
+from tf_robot_learning.kinematic.urdf_utils import urdf_from_file, urdf_to_tree
 from visualization_msgs.msg import Marker
 
 
@@ -44,9 +44,9 @@ def orientation_error_mat2(r1, r2):
     return tf.linalg.norm(log, ord='fro', axis=[-2, -1])
 
 
-def compute_pose_loss(xs, target_pose):
-    position = xs[:, -1, :3]
-    orientation = tf.reshape(xs[:, -1, 3:], [-1, 3, 3])
+def compute_pose_loss(ee_pose, target_pose):
+    position = ee_pose[:, :3]
+    orientation = tf.reshape(ee_pose[:, 3:], [-1, 3, 3])
     target_position = target_pose[:, :3]
     target_quat = target_pose[:, 3:]
     target_orientation = tfr.from_quaternion(target_quat)
@@ -56,8 +56,8 @@ def compute_pose_loss(xs, target_pose):
     return position_error, _orientation_error
 
 
-def compute_jl_loss(chain: Chain, q):
-    joint_limits = chain.get_joint_limits()
+def compute_jl_loss(tree: Tree, q):
+    joint_limits = tree.get_joint_limits()
     jl_low = joint_limits[:, 0][tf.newaxis]
     jl_high = joint_limits[:, 1][tf.newaxis]
     low_error = tf.math.maximum(jl_low - q, 0)
@@ -76,14 +76,12 @@ class HdtIK:
     def __init__(self, urdf_filename: pathlib.Path, max_iters: int = 5000):
         self.urdf = urdf_from_file(urdf_filename.as_posix())
 
-        self.left = urdf_to_chain(self.urdf, tip='left_tool')
-        self.right = urdf_to_chain(self.urdf, tip='right_tool')
+        self.tree = urdf_to_tree(self.urdf)
+        self.left_ee_name = 'left_tool'
+        self.right_ee_name = 'right_tool'
 
         self.actuated_joint_names = list([j.name for j in self.urdf.joints if j.type in SUPPORTED_ACTUATED_JOINT_TYPES])
         self.n_actuated_joints = len(self.actuated_joint_names)
-
-        self.left_idx = [self.actuated_joint_names.index(jn) for jn in self.left.actuated_joint_names()]
-        self.right_idx = [self.actuated_joint_names.index(jn) for jn in self.right.actuated_joint_names()]
 
         self.robot_info = RobotVoxelgridInfo(joint_positions_key='!!!')
 
@@ -107,7 +105,7 @@ class HdtIK:
     def solve(self, env_points, left_target_pose, right_target_pose, initial_value=None, viz=False):
         if initial_value is None:
             batch_size = left_target_pose.shape[0]
-            initial_value = tf.zeros([batch_size, self.n_joints], dtype=tf.float32)
+            initial_value = tf.zeros([batch_size, self.get_num_joints()], dtype=tf.float32)
         q = tf.Variable(initial_value)
 
         converged = False
@@ -134,16 +132,14 @@ class HdtIK:
         self.optimizer.apply_gradients(grads_and_vars=zip(gradients, [q]))
         return loss, gradients, viz_info
 
-    @tf.function
+    # @tf.function
     def step(self, q, env_points, left_target_pose, right_target_pose):
-        left_q = tf.gather(q, self.left_idx, axis=1)
-        left_xs = self.left.fk(left_q)
-        left_pose_loss = self.compute_pose_loss(left_xs, left_target_pose)
-        left_jl_loss = self.compute_jl_loss(self.left, left_q)
-        right_q = tf.gather(q, self.right_idx, axis=1)
-        right_xs = self.right.fk(right_q)
-        right_pose_loss = self.compute_pose_loss(right_xs, right_target_pose)
-        right_jl_loss = self.compute_jl_loss(self.right, right_q)
+        poses = self.tree.fk(q)
+        jl_loss = self.compute_jl_loss(self.tree, q)
+        left_ee_pose = poses[self.left_ee_name]
+        right_ee_pose = poses[self.right_ee_name]
+        left_pose_loss = self.compute_pose_loss(left_ee_pose, left_target_pose)
+        right_pose_loss = self.compute_pose_loss(right_ee_pose, right_target_pose)
 
         # # FIXME: fix the FK code to handle trees better, to avoid duplicating the computation
         # #  and so that we can get the gripper links when we call FK.
@@ -175,18 +171,17 @@ class HdtIK:
         losses = [
             left_pose_loss,
             right_pose_loss,
-            left_jl_loss,
-            right_jl_loss,
+            jl_loss,
             # collision_loss,
         ]
         loss = tf.reduce_mean(tf.math.add_n(losses))
 
-        viz_info = [left_xs, right_xs, left_q, right_q]
+        viz_info = [poses]
 
         return loss, viz_info
 
-    def compute_jl_loss(self, chain: Chain, q):
-        return self.jl_alpha * compute_jl_loss(chain, q)
+    def compute_jl_loss(self, tree: Tree, q):
+        return self.jl_alpha * compute_jl_loss(tree, q)
 
     def compute_pose_loss(self, xs, target_pose):
         pos_error, rot_error = compute_pose_loss(xs, target_pose)
@@ -194,7 +189,7 @@ class HdtIK:
         return pose_loss
 
     def viz_func(self, left_target_pose, right_target_pose, q, viz_info):
-        left_xs, right_xs, left_q, right_q = viz_info
+        poses, = viz_info
         b = 0
         self.tf2.send_transform(left_target_pose[b, :3].numpy().tolist(),
                                 left_target_pose[b, 3:].numpy().tolist(),
@@ -203,11 +198,9 @@ class HdtIK:
                                 right_target_pose[b, 3:].numpy().tolist(),
                                 parent='world', child='right_target')
 
-        positions = tf.concat([left_xs[b, :, :3], right_xs[b, :, :3]], axis=0)
-
         robot_state_dict = {}
-        for name, position in zip(self.actuated_joint_names, q[b].numpy().tolist()):
-            robot_state_dict[name] = position
+        for name, pose in zip(self.actuated_joint_names, q[b].numpy().tolist()):
+            robot_state_dict[name] = pose
 
         robot = DisplayRobotState()
         robot.state.joint_state.name = robot_state_dict.keys()
@@ -229,7 +222,9 @@ class HdtIK:
         msg.scale.z = scale
         msg.color.r = 1
         msg.color.a = 1
-        for position in positions:
+        msg.points = []
+        for pose in poses.values():
+            position = pose.numpy()[b, :3]
             p = Point(x=position[0], y=position[1], z=position[2])
             msg.points.append(p)
 

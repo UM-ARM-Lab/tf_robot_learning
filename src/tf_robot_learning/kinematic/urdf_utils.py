@@ -16,15 +16,15 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with tf_robot_learning. If not, see <http://www.gnu.org/licenses/>.
-from typing import Optional, Dict, List
+from typing import Optional
 
 import tensorflow as tf
 
 from tf.transformations import euler_matrix
-from tf_robot_learning.kinematic.chain import Chain
 from tf_robot_learning.kinematic.frame import Frame
 from tf_robot_learning.kinematic.joint import JointType, Joint, Link, SUPPORTED_JOINT_TYPES
 from tf_robot_learning.kinematic.segment import Segment
+from tf_robot_learning.kinematic.tree import Tree
 from urdf_parser_py import urdf
 from urdf_parser_py.urdf import URDF
 
@@ -66,34 +66,24 @@ def urdf_link_to_tk_link(lnk: urdf.Link):
         return Link(frame=urdf_pose_to_tk_frame(None), mass=1.)
 
 
-def _add(urdf: URDF, parent: str, segments_map: Dict, chain: List[str]):
-    """ DFS iteration """
-
-
-def urdf_to_chain(urdf, root=None, tip=None):
-    root = urdf.get_root() if root is None else root
+def urdf_to_tree(urdf):
     segments_map = {}
 
-    chain = None if tip is None else urdf.get_chain(root, tip)[1:]  # A list of strings
-
-    for pair in urdf.child_map:
-        for joint_name, child_name in urdf.child_map[parent]:
+    for parent_link_name, children in urdf.child_map.items():
+        segments_map[parent_link_name] = []
+        for joint_name, child_link_name in children:
             # iterate to find the right joint, possibly inefficient but this function is usually called once
-            for urdf_joint in urdf.joints:
-                if urdf_joint.name == joint_name:
-                    if urdf_joint.joint_type not in SUPPORTED_JOINT_TYPES:
-                        raise NotImplementedError(f'Unsupported joint {joint_name} of type {urdf_joint.joint_type}')
+            urdf_joint = urdf.joint_map[joint_name]
+            if urdf_joint.joint_type not in SUPPORTED_JOINT_TYPES:
+                raise NotImplementedError(f'Unsupported joint {joint_name} of type {urdf_joint.joint_type}')
 
-                    tk_jnt, tk_origin = urdf_joint_to_tk_joint(urdf_joint)
+            joint, tk_origin = urdf_joint_to_tk_joint(urdf_joint)
+            link = urdf_link_to_tk_link(urdf.link_map[child_link_name])
 
-                    tk_lnk = urdf_link_to_tk_link(urdf.link_map[child_name])
+            segment = Segment(joint=joint, f_tip=tk_origin, child_name=child_link_name, link=link)
+            segments_map[parent_link_name].append((joint, segment))
 
-                    if parent not in segments_map:
-                        segments_map[parent] = []
-                    segment = Segment(joint=tk_jnt, f_tip=tk_origin, child_name=child_name, link=tk_lnk)
-                    segments_map[parent].append((tk_jnt, segment))
-
-    return Chain(segments_map)
+    return Tree(urdf, segments_map)
 
 
 def urdf_from_file(file):
