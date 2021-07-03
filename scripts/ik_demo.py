@@ -12,6 +12,8 @@ from arc_utilities.ros_helpers import get_connected_publisher
 from arc_utilities.tf2wrapper import TF2Wrapper
 from geometry_msgs.msg import Point
 from link_bot_classifiers.robot_points import RobotVoxelgridInfo
+from moonshine.geometry import pairwise_squared_distances
+from moonshine.moonshine_utils import repeat_tensor, reduce_mean_no_nan
 from moonshine.simple_profiler import SimpleProfiler
 from moveit_msgs.msg import DisplayRobotState
 from sensor_msgs.msg import JointState
@@ -71,6 +73,24 @@ def target(x, y, z, roll, pitch, yaw):
     return tf.cast(tf.expand_dims(tf.concat([[x, y, z], quaternion_from_euler(roll, pitch, yaw)], 0), 0), tf.float32)
 
 
+def xm_to_44(xm):
+    """
+    Args:
+        xm: [b, 12]
+    Returns: [b, 4, 4]
+    """
+    b = xm.shape[0]
+    p = xm[:, :3]  # [b,3]
+    p = p[:, :, None]  # [b,3,1]
+    r = xm[:, 3:]  # [b,9]
+    r33 = tf.reshape(r, [-1, 3, 3])  # [b,3,3]
+    m34 = tf.concat([r33, p], axis=-1)  # [b,3,4]
+    h = tf.constant([[0, 0, 0, 1]], dtype=tf.float32)  # [1,4]
+    h = tf.tile(h[None], [b, 1, 1])  # [b,1,4]
+    m44 = tf.concat([m34, h], axis=-2)  # [b,4,4]
+    return m44
+
+
 class HdtIK:
 
     def __init__(self, urdf_filename: pathlib.Path, max_iters: int = 5000):
@@ -90,6 +110,10 @@ class HdtIK:
         self.jl_alpha = 0.1
         self.initial_lr = 0.01
         self.loss_threshold = 1e-4
+        self.barrier_upper_lim = tf.square(0.06)  # stops repelling points from pushing after this distance
+        self.barrier_scale = 0.05  # scales the gradients for the repelling points
+        self.barrier_epsilon = 0.01
+        self.log_cutoff = tf.math.log(self.barrier_scale * self.barrier_upper_lim + self.barrier_epsilon)
 
         # lr = tf.keras.optimizers.schedules.ExponentialDecay(0.5, 20, 0.9)
         # opt = tf.keras.optimizers.SGD(lr)
@@ -141,44 +165,51 @@ class HdtIK:
         left_pose_loss = self.compute_pose_loss(left_ee_pose, left_target_pose)
         right_pose_loss = self.compute_pose_loss(right_ee_pose, right_target_pose)
 
-        # # FIXME: fix the FK code to handle trees better, to avoid duplicating the computation
-        # #  and so that we can get the gripper links when we call FK.
-        # #  run depth-first iteration accumulating matrix products?
-        def _compute_collision_loss():
-            # # collision_loss = self.compute_collision_loss(left_xs, right_xs, env_points)
-            # # compute robot points given q
-            # link_transforms = {}
-            # for left_link_i, left_link in enumerate(self.left.segments):
-            # left_link_x = left_xs[:, left_link_i + 1]
-            # link_transforms[left_link.child_name] = left_link_x
-            # for right_link_i, right_link in enumerate(self.right.segments):
-            # right_link_x = right_xs[:, right_link_i + 1]
-            # link_transforms[right_link.child_name] = right_link_x
-            # link_to_robot_transforms = []
-            # for link_name in self.robot_info.link_names:
-            # link_to_robot_transform = link_transforms[link_name]
-            # link_to_robot_transforms.append(link_to_robot_transform)
-            # # [b, n_links, 4, 4, 1], links/order based on robot_info
-            # link_to_robot_transforms = tf.stack(link_to_robot_transforms, axis=0)
-            # links_to_robot_transform_batch = tf.repeat(link_to_robot_transforms, self.robot_info.points_per_links, axis=1)
-            # batch_size = q.shape[0]
-            # points_link_frame_homo_batch = repeat_tensor(self.robot_info.points_link_frame, batch_size, 0, True)
-            # points_robot_frame_homo_batch = tf.matmul(links_to_robot_transform_batch, points_link_frame_homo_batch)
-            # points_robot_frame_batch = points_robot_frame_homo_batch[:, :, :3, 0]
-            # # compute the distance matrix between robot points and the environment points
-            pass
+        collision_loss, collision_viz_info = self.compute_collision_loss(poses, env_points)
 
         losses = [
             left_pose_loss,
             right_pose_loss,
             jl_loss,
-            # collision_loss,
+            collision_loss,
         ]
         loss = tf.reduce_mean(tf.math.add_n(losses))
 
         viz_info = [poses]
+        viz_info.extend(collision_viz_info)
 
         return loss, viz_info
+
+    def compute_collision_loss(self, poses, env_points):
+        # compute robot points given q
+        link_to_robot_transforms = []
+        for link_name in self.robot_info.link_names:
+            link_to_robot_transform = xm_to_44(poses[link_name])
+            link_to_robot_transforms.append(link_to_robot_transform)
+        # [b, n_links, 4, 4, 1], links/order based on robot_info
+        link_to_robot_transforms = tf.stack(link_to_robot_transforms, axis=1)
+        links_to_robot_transform_batch = tf.repeat(link_to_robot_transforms, self.robot_info.points_per_links,
+                                                   axis=1)
+        batch_size = env_points.shape[0]
+        points_link_frame_homo_batch = repeat_tensor(self.robot_info.points_link_frame, batch_size, 0, True)
+        points_robot_frame_homo_batch = tf.matmul(links_to_robot_transform_batch, points_link_frame_homo_batch)
+        points_robot_frame_batch = points_robot_frame_homo_batch[:, :, :3, 0]  # [b, n_env_points, n_robot_points]
+
+        # compute the distance matrix between robot points and the environment points
+        dists = pairwise_squared_distances(env_points, points_robot_frame_batch)
+        # FIXME: add visualization
+        min_dists_indices = tf.argmin(dists, axis=-1)
+        min_dist_robot_points = tf.gather(points_robot_frame_batch, min_dists_indices, axis=-1)
+        min_dists = tf.reduce_min(dists, axis=-1)
+
+        viz_info = [min_dists_indices]
+
+        return reduce_mean_no_nan(self.barrier_func(min_dists), axis=-1), viz_info
+
+    def barrier_func(self, min_dists_b):
+        z = tf.math.log(self.barrier_scale * min_dists_b + self.barrier_epsilon)
+        # of course this additive term doesn't affect the gradient, but it makes hyper-parameters more interpretable
+        return tf.maximum(-z, -self.log_cutoff) + self.log_cutoff
 
     def compute_jl_loss(self, tree: Tree, q):
         return self.jl_alpha * compute_jl_loss(tree, q)
@@ -250,7 +281,7 @@ def main():
     ik_solver = HdtIK(urdf_filename, max_iters=500)
 
     batch_size = 32
-    viz = True
+    viz = False
 
     left_target_pose = tf.tile(target(-0.3, 0.6, 0.2, 0, -pi / 2, -pi / 2), [batch_size, 1])
     right_target_pose = tf.tile(target(0.3, 0.6, 0.2, -pi / 2, -pi / 2, 0), [batch_size, 1])
